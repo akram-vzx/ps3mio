@@ -1,0 +1,18 @@
+# PS3 build - MANUAL ONLY and NOT ACTIVE YET.
+# The native PS3 app (C + PSL1GHT) is still in the design phase, see docs/ARCHITECTURE.md.
+# This file reserves the workflow so it shows up in the Actions list; it will build ps3/ once it exists.
+name: PS3 PKG (not active yet)
+on:
+  workflow_dispatch:
+jobs:
+  ps3:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Status
+        run: |
+          if [ -f ps3/Makefile ]; then
+            echo "ps3/Makefile found - build steps still to be written."
+          else
+            echo "::notice::PS3 native app not started yet (design phase). Nothing to build."
+          fi
