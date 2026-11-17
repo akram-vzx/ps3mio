@@ -2,6 +2,7 @@ package io.ps3mio
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -32,9 +33,14 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -65,6 +71,9 @@ class PlayerActivity : Activity() {
     private var lastSave = 0L
     private var speedIdx = 1
     private val speeds = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+    private var nextVid: String? = null
+    private var bingeGroup = ""
+    private lateinit var nextBtn: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +90,9 @@ class PlayerActivity : Activity() {
         val logo = intent.getStringExtra("logo") ?: ""
         val bg = intent.getStringExtra("bg") ?: ""
         vid = intent.getStringExtra("vid") ?: url
+        val nv = intent.getStringExtra("nextVid") ?: ""
+        nextVid = if (nv.isEmpty()) null else nv
+        bingeGroup = intent.getStringExtra("group") ?: ""
         if (url.isEmpty()) {
             finish()
             return
@@ -99,6 +111,7 @@ class PlayerActivity : Activity() {
         root.addView(buffering, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER))
 
         buildOsd(root, title)
+        buildNext(root)
         buildSplash(root, title, logo, bg)
         root.setOnClickListener { toggleOsd() }
         setContentView(root)
@@ -223,7 +236,7 @@ class PlayerActivity : Activity() {
         row2.addView(speedBtn, blp)
         bottom.addView(row2, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val hint = label(this, "A pause   Left/Right seek 10s   L1/R1 30s   Y subtitles   X audio   B back", 11f, Col.dim)
+        val hint = label(this, "A pause   Left/Right seek   L1/R1 seek (long)   R2 next episode   Y subtitles   X audio   B back", 11f, Col.dim)
         hint.gravity = Gravity.CENTER
         bottom.addView(hint, LinearLayout.LayoutParams(MATCH, WRAP))
         osd.addView(bottom, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
@@ -251,9 +264,19 @@ class PlayerActivity : Activity() {
         if (hdr.isNotEmpty()) dsf.setDefaultRequestProperties(hdr)
 
         val msf = DefaultMediaSourceFactory(this).setDataSourceFactory(dsf)
-        val p = ExoPlayer.Builder(this).setMediaSourceFactory(msf).build()
+        val hw = PlayerPrefs.hw
+        val selector = MediaCodecSelector { mimeType, secure, tunneling ->
+            val all = MediaCodecUtil.getDecoderInfos(mimeType, secure, tunneling)
+            if (hw) all else {
+                val sw = all.filter { !it.hardwareAccelerated }
+                if (sw.isEmpty()) all else sw
+            }
+        }
+        val rf = DefaultRenderersFactory(this).setMediaCodecSelector(selector).setEnableDecoderFallback(true)
+        val p = ExoPlayer.Builder(this, rf).setMediaSourceFactory(msf).build()
         player = p
         pv.player = p
+        applyPrefs(p)
 
         val subCfg = ArrayList<MediaItem.SubtitleConfiguration>()
         try {
@@ -304,7 +327,7 @@ class PlayerActivity : Activity() {
                 }
                 if (state == Player.STATE_ENDED) {
                     Prefs.setPos(vid, 0L)
-                    finish()
+                    if (PlayerPrefs.binge && nextVid != null) playNext() else finish()
                 }
             }
 
@@ -339,6 +362,9 @@ class PlayerActivity : Activity() {
                     }
                 }
                 val now = System.currentTimeMillis()
+                val pop = PlayerPrefs.popupSec
+                nextBtn.visibility =
+                    if (nextVid != null && pop > 0 && d > 0 && pos > 0 && d - pos <= pop * 1000L) View.VISIBLE else View.GONE
                 if (osd.visibility == View.VISIBLE && now > osdHideAt && p.isPlaying) osd.visibility = View.GONE
                 if (firstFrame && now - lastSave > 10_000L) {
                     savePos()
@@ -392,6 +418,51 @@ class PlayerActivity : Activity() {
         speedIdx = (speedIdx + 1) % speeds.size
         p.setPlaybackSpeed(speeds[speedIdx])
         speedBtn.text = speeds[speedIdx].toString() + "x"
+    }
+
+    // ---- settings (Stremio Settings > Player) + next episode ---------------------------------
+    private fun buildNext(root: FrameLayout) {
+        nextBtn = label(this, "Next episode   (R2)", 15f, Col.text, true)
+        nextBtn.setPadding(dp(18), dp(12), dp(18), dp(12))
+        nextBtn.background = focusBg(this, 8, Col.accent)
+        nextBtn.isClickable = true
+        nextBtn.visibility = View.GONE
+        nextBtn.setOnClickListener { playNext() }
+        val lp = FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END)
+        lp.setMargins(0, 0, dp(28), dp(120))
+        root.addView(nextBtn, lp)
+    }
+
+    private fun playNext() {
+        val nv = nextVid ?: return
+        Prefs.setPos(vid, 0L)
+        val r = Intent()
+        r.putExtra("nextVid", nv)
+        r.putExtra("group", bingeGroup)
+        setResult(RESULT_OK, r)
+        finish()
+    }
+
+    private fun applyPrefs(p: ExoPlayer) {
+        val sv: SubtitleView? = pv.subtitleView
+        if (sv != null) {
+            val outline = PlayerPrefs.subOutline
+            sv.setApplyEmbeddedStyles(false)
+            sv.setStyle(
+                CaptionStyleCompat(
+                    PlayerPrefs.subColor, PlayerPrefs.subBg, Color.TRANSPARENT,
+                    if (Color.alpha(outline) == 0) CaptionStyleCompat.EDGE_TYPE_NONE else CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                    outline, null
+                )
+            )
+            sv.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * PlayerPrefs.subSize / 100f)
+        }
+        val b = p.trackSelectionParameters.buildUpon()
+        if (PlayerPrefs.audioLang.isNotEmpty()) b.setPreferredAudioLanguage(PlayerPrefs.audioLang)
+        if (PlayerPrefs.subLang.isNotEmpty()) b.setPreferredTextLanguage(PlayerPrefs.subLang)
+        else b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        if (!PlayerPrefs.surround) b.setMaxAudioChannelCount(2)
+        p.trackSelectionParameters = b.build()
     }
 
     // ---- audio / subtitle menus (inside the player, like Stremio) -----------------------------
@@ -464,7 +535,7 @@ class PlayerActivity : Activity() {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(e)
         val p = player ?: return super.dispatchKeyEvent(e)
-        val step = 10_000L * (1 + minOf(e.repeatCount / 4, 5))
+        val step = PlayerPrefs.seekArrowMs() * (1 + minOf(e.repeatCount / 4, 5))
         when (e.keyCode) {
             KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
             KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
@@ -483,12 +554,12 @@ class PlayerActivity : Activity() {
                 return true
             }
             KeyEvent.KEYCODE_BUTTON_L1 -> {
-                seekBy(-30_000L)
+                seekBy(-PlayerPrefs.seekShiftMs())
                 showOsd()
                 return true
             }
             KeyEvent.KEYCODE_BUTTON_R1 -> {
-                seekBy(30_000L)
+                seekBy(PlayerPrefs.seekShiftMs())
                 showOsd()
                 return true
             }
@@ -504,6 +575,10 @@ class PlayerActivity : Activity() {
             }
             KeyEvent.KEYCODE_BUTTON_X -> {
                 showTracks(C.TRACK_TYPE_AUDIO, "Audio")
+                return true
+            }
+            KeyEvent.KEYCODE_BUTTON_R2, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_N -> {
+                if (nextVid != null) playNext()
                 return true
             }
             KeyEvent.KEYCODE_BUTTON_SELECT -> {

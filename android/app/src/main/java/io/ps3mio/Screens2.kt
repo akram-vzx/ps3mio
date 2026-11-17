@@ -24,6 +24,12 @@ object TorrentHook {
     var resolver: TorrentResolver? = null
 }
 
+/** An episode in play order (used for "next episode" / binge watching). */
+class EpRef(val vid: String, val title: String)
+
+/** What the player needs to chain into the next episode. */
+class PlayCtx(val type: String, val meta: JSONObject?, val poster: String?, val eps: List<EpRef>)
+
 private fun nonEmpty(s: String?): String? = if (s.isNullOrEmpty()) null else s
 
 /** Title page: poster, logo, description; seasons + episodes for series; Watch for movies. */
@@ -47,6 +53,7 @@ class DetailScreen(
     private var si = 0
     private var seasonBtn: TextView? = null
     private var shownName = ""
+    private var epRefs: List<EpRef> = emptyList()
 
     init {
         frame.setBackgroundColor(Col.bg)
@@ -145,6 +152,15 @@ class DetailScreen(
             seasons = map
             seasonKeys = ArrayList(map.keys)
             si = if (seasonKeys.size > 1 && seasonKeys[0] == 0) 1 else 0
+            val refs = ArrayList<EpRef>()
+            for (k in seasonKeys) {
+                if (k == 0) continue
+                for (v in map[k] ?: ArrayList<JSONObject>()) {
+                    val n = if (v.has("episode")) v.optInt("episode") else v.optInt("number")
+                    refs.add(EpRef(v.optString("id"), name + " S" + k + "E" + (if (n > 0) n.toString() else "?")))
+                }
+            }
+            epRefs = refs
             val sb = button(act, "") { cycleSeason() }
             seasonBtn = sb
             val lp = LinearLayout.LayoutParams(WRAP, WRAP)
@@ -205,7 +221,7 @@ class DetailScreen(
             row.addView(txt, LinearLayout.LayoutParams(0, WRAP, 1f))
             val vid = v.optString("id")
             val shown = shownName + " S" + key + "E" + (if (ep > 0) ep.toString() else "?")
-            row.setOnClickListener { act.open(StreamsScreen(act, type, vid, shown, meta, poster)) }
+            row.setOnClickListener { act.open(StreamsScreen(act, type, vid, shown, meta, poster, epRefs)) }
             val lp = LinearLayout.LayoutParams(MATCH, WRAP)
             lp.topMargin = dp(6)
             episodes.addView(row, lp)
@@ -220,11 +236,16 @@ class StreamsScreen(
     private val vid: String,
     private val title: String,
     private val meta: JSONObject?,
-    private val poster: String?
+    private val poster: String?,
+    private val eps: List<EpRef> = emptyList(),
+    private val autoGroup: String = "",
+    private val autoplay: Boolean = false
 ) : Screen(act) {
     private val scroll = ScrollView(act)
     private val col = LinearLayout(act)
     private val status = label(act, "Loading streams...", 14f, Col.dim)
+    private val candidates = ArrayList<JSONObject>()
+    private var autoStarted = false
     override val view: View = scroll
     private var started = false
     private var total = 0
@@ -252,6 +273,19 @@ class StreamsScreen(
             }
         }, {
             status.text = if (total == 0) "No streams found." else ""
+            if (autoplay && !autoStarted && candidates.isNotEmpty()) {
+                autoStarted = true
+                var pick: JSONObject = candidates[0]
+                if (autoGroup.isNotEmpty()) {
+                    for (c in candidates) {
+                        if (bingeOf(c) == autoGroup) {
+                            pick = c
+                            break
+                        }
+                    }
+                }
+                startStream(pick)
+            }
         })
     }
 
@@ -262,6 +296,7 @@ class StreamsScreen(
         if (!isHttp && !isTorrent) return
         val r = Stremio.parseStream(a, s)
         total++
+        candidates.add(s)
         val row = LinearLayout(act)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
@@ -281,16 +316,25 @@ class StreamsScreen(
         txt.addView(l1)
         txt.addView(label(act, r.infoLine(), 13f, Col.dim))
         row.addView(txt, LinearLayout.LayoutParams(0, WRAP, 1f))
-        row.setOnClickListener { play(s, isHttp, url) }
+        row.setOnClickListener { startStream(s) }
         val lp = LinearLayout.LayoutParams(MATCH, WRAP)
         lp.topMargin = dp(5)
         col.addView(row, lp)
     }
 
-    private fun play(s: JSONObject, isHttp: Boolean, url: String) {
+    private fun bingeOf(s: JSONObject): String =
+        s.optJSONObject("behaviorHints")?.optString("bingeGroup") ?: ""
+
+    private fun startStream(s: JSONObject) {
+        val url = s.optString("url")
+        val isHttp = url.startsWith("http://") || url.startsWith("https://")
         val headers = s.optJSONObject("behaviorHints")?.optJSONObject("proxyHeaders")?.optJSONObject("request")
+        val idx = eps.indexOfFirst { it.vid == vid }
+        val next: EpRef? = if (idx >= 0 && idx + 1 < eps.size) eps[idx + 1] else null
+        val ctx = PlayCtx(type, meta, poster, eps)
+        val group = bingeOf(s)
         if (isHttp) {
-            act.play(url, title, meta, poster, vid, subs, headers)
+            act.play(url, title, meta, poster, vid, subs, headers, next?.vid, group, ctx)
             return
         }
         val res = TorrentHook.resolver
@@ -302,7 +346,7 @@ class StreamsScreen(
         res.resolve(s, vid) { playUrl ->
             Net.ui {
                 if (playUrl == null) act.toast("Torrent failed to start")
-                else act.play(playUrl, title, meta, poster, vid, subs, null)
+                else act.play(playUrl, title, meta, poster, vid, subs, null, next?.vid, group, ctx)
             }
         }
     }
@@ -515,6 +559,7 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
                 act.goHome()
             }, lp)
         }
+        col.addView(button(act, "Player settings") { act.open(PlayerSettingsScreen(act)) }, lp)
         col.addView(button(act, "Refresh (sync addons)") { act.refresh() }, lp)
         val about = label(act, "ps3mio 0.1  -  Stremio client\nGamepad: A select, B back, Y search, X refresh.\nPlayer: A pause, Left/Right seek, L1/R1 +-30s, Y subtitles, X audio.", 13f, Col.dim)
         about.setPadding(0, dp(20), 0, 0)

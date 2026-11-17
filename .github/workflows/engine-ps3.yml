@@ -1,0 +1,52 @@
+# Engine track: PS3 PKG built from Cruslan/PS3-Movian-Next (modern PSL1GHT v2 + FFmpeg)
+# with the ps3mio patch + built-in Stremio plugin. Same engine/player as the Android engine build.
+# Manual run. Very long (FFmpeg is compiled for the Cell CPU).
+name: Engine - PS3 PKG
+on: workflow_dispatch
+jobs:
+  ps3:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - name: Build + test the Stremio plugin
+        run: |
+          cd engine
+          node tools/build.js
+          node test/mock-test.js
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential curl tar python3 libglib2.0-bin zip unzip git xz-utils
+
+      - name: Get PS3-Movian-Next source
+        run: |
+          git config --global url.https://github.com/.insteadOf git://github.com/
+          git clone --recursive --depth 1 https://github.com/Cruslan/PS3-Movian-Next.git next
+
+      - name: Apply ps3mio patch
+        run: python3 engine/ps3mio_patch.py next --plugin engine/plugin
+
+      - name: Prepare PS3 SDK (downloads ps3dev)
+        working-directory: next
+        run: make prepare
+
+      - name: Build
+        working-directory: next
+        run: make -j"$(nproc)" all APPNAMEUSER=ps3mio PKGNAME=ps3mio
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp next/build/ps3mio.pkg next/build/ps3mio_geohot.pkg out/ || ls -R next/build | head -50
+          cp engine/dist/stremio.zip out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ps3mio-engine-ps3
+          path: out

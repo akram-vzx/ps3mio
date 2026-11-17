@@ -1,0 +1,97 @@
+# Engine track: Android build of the Movian engine with the ps3mio patch + built-in Stremio plugin.
+# This is the SAME engine/player as the PS3 build, so test here first. Manual run.
+name: Engine - Android APK
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - name: Build + test the Stremio plugin
+        run: |
+          cd engine
+          node tools/build.js
+          node test/mock-test.js
+
+      - name: Get Movian source (with submodules)
+        run: git config --global url.https://github.com/.insteadOf git://github.com/ && git clone --recursive https://github.com/andoma/movian.git movian
+
+      - name: Apply ps3mio patch + branding
+        run: |
+          python3 engine/ps3mio_patch.py movian --plugin engine/plugin
+          cd movian
+          sed -i 's/ANDROID_TARGET_SDK_VERSION=21/ANDROID_TARGET_SDK_VERSION=23/' configure.android
+          sed -i 's/android:label="@@APPNAME@@"/android:label="ps3mio"/' android/AndroidManifest.xml.in
+
+      - name: Android SDK pieces
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-23" "build-tools;27.0.3"
+
+      - name: Android NDK r16b
+        run: |
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip
+          unzip -q ndk.zip
+          echo "NDK_DIR=$PWD/android-ndk-r16b" >> $GITHUB_ENV
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git curl zip unzip python3 python-is-python3 pkg-config yasm ccache \
+            libfreetype6-dev zlib1g-dev libbz2-dev libncurses5 libtinfo5
+
+      - name: Pre-fetch dependencies (original download URLs are dead)
+        run: |
+          mkdir -p "$PWD/dlcache"
+          put() {
+            url="$1"; shift
+            h=$(echo "$url" | sha1sum | awk '{print $1}')
+            for m in "$@"; do
+              if curl -fsSL --retry 2 -o "$PWD/dlcache/$h" "$m"; then echo "OK  $m"; return 0; fi
+              echo "bad $m"
+            done
+            echo "FAILED to fetch $url"; return 1
+          }
+          put "https://fossies.org/linux/misc/bzip2-1.0.6.tar.gz" \
+            https://sourceware.org/pub/bzip2/bzip2-1.0.6.tar.gz \
+            https://ftp.openbsd.org/pub/OpenBSD/distfiles/bzip2-1.0.6.tar.gz \
+            https://fossies.org/linux/misc/old/bzip2-1.0.6.tar.gz
+          put "http://download.savannah.gnu.org/releases/freetype/freetype-2.4.9.tar.gz" \
+            https://download.savannah.gnu.org/releases/freetype/freetype-2.4.9.tar.gz \
+            https://downloads.sourceforge.net/project/freetype/freetype2/2.4.9/freetype-2.4.9.tar.gz
+
+      - name: Configure + build
+        env:
+          ANDROID_NDK_ROOT: ${{ env.NDK_DIR }}
+          ANDROID_NDK_HOME: ${{ env.NDK_DIR }}
+          ANDROID_NDK: ${{ env.NDK_DIR }}
+        run: |
+          cd movian
+          ./configure.android --kind=api15_armv7 --release --cleanbuild \
+            --sdk="$ANDROID_HOME" --ndk="$NDK_DIR" --downloadcache="$GITHUB_WORKSPACE/dlcache" || { tail -n 60 build.android.api15_armv7/freetype/build/config.log; exit 1; }
+          make -j2 BUILD=android.api15_armv7
+
+      - name: Sign with a throw-away key
+        run: |
+          APK=$(ls movian/build.android.api15_armv7/*.apk | head -1)
+          keytool -genkeypair -keystore debug.keystore -storepass android -keypass android \
+            -alias ps3mio -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ps3mio"
+          "$ANDROID_HOME/build-tools/27.0.3/apksigner" sign --ks debug.keystore --ks-pass pass:android \
+            --out ps3mio-engine.apk "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ps3mio-engine-apk
+          path: |
+            ps3mio-engine.apk
+            engine/dist/stremio.zip

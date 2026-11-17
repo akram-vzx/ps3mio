@@ -1,0 +1,13 @@
+{
+  "type": "ecmascript",
+  "id": "stremio",
+  "file": "stremio.js",
+  "apiversion": 2,
+  "title": "ps3mio Stremio",
+  "version": "0.2.0",
+  "author": "community",
+  "synopsis": "Stremio addon client for Movian (catalogs, search, library, streams, subtitles)",
+  "category": "video",
+  "icon": "logo.png",
+  "memory-size": 16384
+}

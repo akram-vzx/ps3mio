@@ -24,6 +24,12 @@ object Prefs {
         get() = s().getLong("syncedAt", 0L)
         set(v) { s().edit().putLong("syncedAt", v).apply() }
 
+    fun getStr(key: String, def: String): String = s().getString(key, def) ?: def
+
+    fun setStr(key: String, v: String) {
+        s().edit().putString(key, v).apply()
+    }
+
     fun getPos(id: String): Long = s().getLong("pos:$id", 0L)
 
     fun setPos(id: String, ms: Long) {

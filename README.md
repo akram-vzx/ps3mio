@@ -1,16 +1,24 @@
 # ps3mio
 
-Stremio لجهاز PS3، مع نسخة أندرويد للتجارب. التصميم وقرارات اللغة والمشغل والتورنت في `docs/ARCHITECTURE.md`.
+Stremio لجهاز PS3، مع نسخة أندرويد للتجارب. التصميم ونتائج البحث في `docs/ARCHITECTURE.md`.
 
-## الحالة
-- `android/`: تطبيق Kotlin كامل لنقاط التجربة (Board / Discover / Library / Search / Addons / Settings / تفاصيل / روابط / مشغل ExoPlayer).
-  لم يُبنَ بعد؛ أول بناء قد يكشف أخطاء ترجمة سأصلحها من سجل GitHub.
-- `ps3/`: مرحلة التصميم فقط، ولا يوجد كود PS3 بعد.
-- التورنت غير مضمَّن في نسخة أندرويد الأولى؛ تظهر روابطه (Seeds والحجم) لكن تشغيله يحتاج المحرك (المرحلة D).
+## مسارا المشروع
+| المجلد | ما هو | يعمل على PS3؟ |
+|---|---|---|
+| `android/` | تطبيق Kotlin + ExoPlayer لتجربة الواجهة ومنطق Stremio وإعدادات المشغل على الهاتف | لا |
+| `engine/` | محرك Movian مع منطق Stremio مدمج (دون تثبيت إضافة)، يُبنى لأندرويد ولـ PS3 بنفس المشغل | نعم |
 
-## البناء
-Workflow **Android APK** يعمل تلقائياً عند كل push يمس `android/`، أو يدوياً من تبويب Actions.
-الناتج: Artifact باسم `ps3mio-apk` (ملف `ps3mio.apk`). Workflow **PS3** غير فعّال بعد ويُشغَّل يدوياً فقط.
+## البناء (تبويب Actions)
+| Workflow | الناتج | التشغيل |
+|---|---|---|
+| Android APK | `ps3mio.apk` (Kotlin) | تلقائي عند الرفع |
+| Engine - Android APK | `ps3mio-engine.apk` (نفس محرك PS3) | يدوي |
+| Engine - PS3 PKG | `ps3mio.pkg` و `ps3mio_geohot.pkg` | يدوي |
 
-## الأيقونة
-`docs/icon-source.svg` (الأصل) ومنه ولّدتُ أيقونات `android/app/src/main/res/mipmap-*`.
+## حالة الشيفرة
+لم يُبنَ شيء من هذا على جهاز؛ المختبَر فقط: منطق إضافة Stremio (بمحاكاة Movian)، وأن تعديلات C تُترجم بدون أخطاء.
+تطبيق Kotlin لم يُترجم بعد. بناء المحرك طويل وقد يحتاج إصلاحات من السجل.
+
+## مجلدات إضافات خارجية (للتطوير دون إعادة بناء)
+أندرويد: `Download/ps3mio/` أو `Download/m7/`، وPS3: `/dev_usb000/ps3mio/` أو `/dev_hdd0/ps3mio/`.
+ضع فيها `stremio.zip` ليتقدم على النسخة المدمجة، ثم Settings > Plugins > Reload.

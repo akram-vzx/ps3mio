@@ -2,6 +2,7 @@ package io.ps3mio
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
@@ -18,10 +19,15 @@ import org.json.JSONObject
  * the same structure as Stremio on webOS. No transitions or animations.
  */
 class MainActivity : Activity() {
+    companion object {
+        private const val REQ_PLAY = 1
+    }
+
     private lateinit var content: FrameLayout
     private val stack = ArrayList<Screen>()
     private var current: Screen? = null
     private var board: BoardScreen? = null
+    private var playCtx: PlayCtx? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,8 +144,15 @@ class MainActivity : Activity() {
         poster: String?,
         vid: String,
         subs: List<JSONObject>,
-        headers: JSONObject?
+        headers: JSONObject?,
+        nextVid: String? = null,
+        group: String = "",
+        ctx: PlayCtx? = null
     ) {
+        if (PlayerPrefs.ext.isNotEmpty() && (url.startsWith("http://") || url.startsWith("https://"))) {
+            if (playExternal(url, title)) return
+        }
+        playCtx = ctx
         val i = Intent(this, PlayerActivity::class.java)
         i.putExtra("url", url)
         i.putExtra("title", title)
@@ -147,11 +160,49 @@ class MainActivity : Activity() {
         i.putExtra("logo", meta?.optString("logo") ?: "")
         val bgUrl = meta?.optString("background") ?: ""
         i.putExtra("bg", if (bgUrl.isNotEmpty()) bgUrl else (poster ?: ""))
+        i.putExtra("nextVid", nextVid ?: "")
+        i.putExtra("group", group)
         val arr = JSONArray()
         for (s in subs) arr.put(s)
         i.putExtra("subs", arr.toString())
         if (headers != null) i.putExtra("headers", headers.toString())
-        startActivity(i)
+        startActivityForResult(i, REQ_PLAY)
+    }
+
+    private fun playExternal(url: String, title: String): Boolean {
+        val i = Intent(Intent.ACTION_VIEW)
+        i.setDataAndType(Uri.parse(url), "video/*")
+        i.putExtra("title", title)
+        val pkg: String? = when (PlayerPrefs.ext) {
+            "vlc" -> "org.videolan.vlc"
+            "mxplayer" -> "com.mxtech.videoplayer.ad"
+            "justplayer" -> "com.brouken.player"
+            else -> null
+        }
+        return try {
+            if (pkg != null) {
+                i.setPackage(pkg)
+                startActivity(i)
+            } else {
+                startActivity(Intent.createChooser(i, "Play with"))
+            }
+            true
+        } catch (e: Exception) {
+            toast("External player not available - using the built-in player")
+            false
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_PLAY || resultCode != RESULT_OK || data == null) return
+        val nv = data.getStringExtra("nextVid") ?: return
+        val c = playCtx ?: return
+        val grp = data.getStringExtra("group") ?: ""
+        val idx = c.eps.indexOfFirst { it.vid == nv }
+        val t = if (idx >= 0) c.eps[idx].title else nv
+        open(StreamsScreen(this, c.type, nv, t, c.meta, c.poster, c.eps, grp, true))
     }
 
     // ---- gamepad ----------------------------------------------------------------------------
