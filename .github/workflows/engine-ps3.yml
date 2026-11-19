@@ -21,8 +21,8 @@ jobs:
 
       - name: Host packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential curl tar python3 libglib2.0-bin zip unzip git xz-utils
+          sudo sed -i "s/azure.archive.ubuntu.com/archive.ubuntu.com/g" /etc/apt/apt-mirrors.txt; sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends build-essential curl tar python3 libglib2.0-bin zip unzip git xz-utils
 
       - name: Get PS3-Movian-Next source
         run: |
