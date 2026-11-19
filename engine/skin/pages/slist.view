@@ -1,0 +1,42 @@
+#import "skin://theme.view"
+#import "skin://nav.view"
+
+// Generic vertical list: streams, episodes, addons, settings, login, search
+widget(container_x, {
+
+  StremioNav();
+
+  widget(container_z, {
+    filterConstraintX: true;
+
+    widget(list_y, {
+      id: "scrollable";
+      chaseFocus: true;
+      scrollThresholdTop: 3em;
+      scrollThresholdBottom: 3em;
+      padding: [1em, 0, 1em, 1em];
+
+      widget(label, {
+        caption: $self.model.metadata.title;
+        size: 2.2em;
+        ellipsize: true;
+        margin: [0.5em, 0.8em, 0, 0.6em];
+      });
+
+      widget(label, {
+        autohide: true;
+        caption: $self.model.metadata.notice;
+        size: 1.5em;
+        margin: [0.5em, 0, 0.5em, 0.6em];
+      });
+
+      cloner($self.model.nodes, loader, {
+        noInitialTransform: true;
+        alt: "skin://items/s/default.view";
+        source: "skin://items/s/" + $self.type + ".view";
+      });
+    });
+
+    ScrollBar("scrollable", 0, 0);
+  });
+});

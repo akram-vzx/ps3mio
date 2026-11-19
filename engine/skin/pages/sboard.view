@@ -1,0 +1,36 @@
+#import "skin://theme.view"
+#import "skin://nav.view"
+
+// Board: rows of posters (Continue Watching + addon catalogs, or search results)
+widget(container_x, {
+
+  StremioNav();
+
+  widget(container_z, {
+    filterConstraintX: true;
+
+    widget(list_y, {
+      id: "scrollable";
+      chaseFocus: true;
+      scrollThresholdTop: 3em;
+      scrollThresholdBottom: 3em;
+
+      widget(label, {
+        autohide: true;
+        caption: $self.model.metadata.notice;
+        size: 1.6em;
+        margin: [1em, 1em, 1em, 0.5em];
+      });
+
+      cloner($self.model.filters, loader, {
+        source: "skin://filterbtn.view";
+      });
+
+      cloner($self.model.rows, loader, {
+        source: "skin://boardrow.view";
+      });
+    });
+
+    ScrollBar("scrollable", 0, 0);
+  });
+});

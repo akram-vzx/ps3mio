@@ -1,0 +1,20 @@
+#import "skin://theme.view"
+
+// Filter / action button (Discover filters, login prompt)
+widget(container_z, {
+  focusable: true;
+  height: 3em;
+  onEvent(activate, navOpen($self.url));
+
+  widget(quad, {
+    color: [0.48, 0.36, 0.96];
+    alpha: 0.25 + 0.65 * iir(isNavFocused() + isHovered(), 6);
+  });
+
+  widget(label, {
+    caption: $self.title;
+    size: 1.3em;
+    margin: [1em, 0, 1em, 0];
+    align: center;
+  });
+});

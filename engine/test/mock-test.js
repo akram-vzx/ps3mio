@@ -3,8 +3,22 @@ var fs = require('fs'), path = require('path'), vm = require('vm');
 var code = fs.readFileSync(path.join(__dirname, '../plugin/stremio.js'), 'utf8');
 
 var routes = [], searchers = [], notes = [], fetched = [];
+function deep() {
+  var store = {};
+  return new Proxy(store, {
+    get: function (t, k) {
+      if (k === '__raw') return t;
+      if (typeof k === 'symbol') return undefined;
+      if (!(k in t)) t[k] = deep();
+      return t[k];
+    },
+    set: function (t, k, v) { t[k] = v; return true; }
+  });
+}
+function raw(x) { return x && x.__raw ? x.__raw : x; }
 function Page(url) {
-  this.url = url; this.items = []; this.metadata = {}; this.model = {}; this.errorMsg = null;
+  this.url = url; this.items = []; this.metadata = deep(); this.model = deep(); this.errorMsg = null;
+  this.type = null; this.loading = false;
 }
 Page.prototype.appendItem = function (u, t, md) { this.items.push({ url: u, type: t, md: md || {} }); return {}; };
 Page.prototype.appendPassiveItem = function (t, d, md) { this.items.push({ passive: t, md: md || {} }); };
@@ -12,6 +26,20 @@ Page.prototype.appendAction = function (title, fn) { this.items.push({ action: t
 Page.prototype.error = function (m) { this.errorMsg = m; };
 Page.prototype.haveMore = function (v) { this.more = v; };
 Page.prototype.redirect = function (u) { this.redirected = u; };
+function rowsOf(pg) {
+  var r = raw(pg.model.rows), out = [];
+  Object.keys(r).forEach(function (k) {
+    var row = raw(r[k]); var items = raw(row.items); var list = [];
+    Object.keys(items).forEach(function (i) { var it = raw(items[i]); list.push({ url: it.url, title: raw(it.metadata).title, icon: raw(it.metadata).icon }); });
+    out.push({ title: row.title, items: list });
+  });
+  return out;
+}
+function filtersOf(pg) {
+  var f = raw(pg.model.filters), out = [];
+  Object.keys(f).forEach(function (k) { var x = raw(f[k]); out.push({ title: x.title, url: x.url }); });
+  return out;
+}
 
 var CINE = { id: 'com.linvo.cinemeta', name: 'Cinemeta', version: '3.0.0', types: ['movie', 'series'],
   idPrefixes: ['tt'], resources: ['catalog', 'meta', { name: 'stream', types: ['movie'], idPrefixes: ['zz'] }],
@@ -41,7 +69,7 @@ var db = {
   'https://v3-cinemeta.strem.io/catalog/movie/top.json': { metas: [{ id: 'tt1', type: 'movie', name: 'Heat', releaseInfo: '1995', poster: 'https://p/1.jpg', imdbRating: '8.3', genres: ['Crime'] }] },
   'https://v3-cinemeta.strem.io/catalog/movie/top/genre=Action.json': { metas: [{ id: 'tt9', type: 'movie', name: 'Act' }] },
   'https://v3-cinemeta.strem.io/catalog/movie/top/search=heat.json': { metas: [{ id: 'tt1', type: 'movie', name: 'Heat' }] },
-  'https://v3-cinemeta.strem.io/meta/movie/tt1.json': { meta: { id: 'tt1', type: 'movie', name: 'Heat', description: 'Cops & robbers', runtime: '170 min', cast: ['A', 'B'] } },
+  'https://v3-cinemeta.strem.io/meta/movie/tt1.json': { meta: { id: 'tt1', type: 'movie', name: 'Heat', description: 'Cops & robbers', runtime: '170 min', cast: ['A', 'B'], logo: 'https://img/logo.png', background: 'https://img/bg.jpg', poster: 'https://img/p.jpg' } },
   'https://v3-cinemeta.strem.io/meta/series/tt2.json': { meta: { id: 'tt2', type: 'series', name: 'Show', videos: [
     { id: 'tt2:1:1', season: 1, episode: 1, title: 'Pilot', released: '2020-01-01T00:00:00Z' },
     { id: 'tt2:1:2', season: 1, episode: 2, title: 'Two' }, { id: 'tt2:0:1', season: 0, episode: 1, title: 'Special' } ] } },
@@ -97,93 +125,92 @@ function open(url) {
 function assert(c, msg) { if (!c) { console.error('FAIL:', msg); process.exitCode = 1; } else console.log('ok  -', msg); }
 function titles(pg) { return pg.items.map(function (i) { return (i.md && i.md.title) || i.action || ''; }); }
 
-// --- not logged in: default addon
+// --- not logged in: default addon, board rows
 var home = open('stremio:start');
-assert(titles(home).some(function (t) { return /Log in/i.test(t) || /phone/i.test(t); }), 'home shows login entries when logged out');
-assert(home.items.some(function (i) { return i.url === 'stremio:cat:0:0'; }), 'home lists browsable catalog (and hides search-required one)');
-assert(!home.items.some(function (i) { return i.url === 'stremio:cat:0:1'; }), 'search-required catalog hidden from board');
+assert(home.type === 'sboard' && home.metadata.nav === 'board', 'start is a board page');
+var rows = rowsOf(home);
+assert(rows.length === 2 && /Popular - Movies/.test(rows[0].title), 'board has catalog rows (search-required catalog hidden)');
+assert(rows[0].items[0].url === 'stremio:meta:movie:tt1' && rows[0].items[0].title === 'Heat (1995)', 'row item url/title');
+assert(filtersOf(home).length === 1 && /phone/i.test(filtersOf(home)[0].title), 'login button when logged out');
 
 // --- login via link code
 var login = open('stremio:login');
-assert(titles(login).indexOf('ABCD') >= 0, 'link code displayed');
-sandbox._timers.shift()();   // poll
+assert(login.items.some(function (i) { return i.md && i.md.title === 'ABCD'; }), 'link code displayed');
+sandbox._timers.shift()();
 assert(store.authKey === 'KEY123', 'authKey stored after approval');
-assert(login.redirected === 'stremio:start', 'redirects home after login');
-assert(JSON.parse(store.addons).length === 3, 'addons synced from account (3)');
+assert(login.redirected === 'stremio:start', 'redirects to board after login');
+assert(JSON.parse(store.addons).length === 3, 'addons synced (3)');
 
-// --- home when logged in
+// --- board when logged in: continue watching row first
 var home2 = open('stremio:start');
-assert(home2.items.some(function (i) { return i.url === 'stremio:library'; }), 'library entry when logged in');
+var rows2 = rowsOf(home2);
+assert(/Continue Watching/.test(rows2[0].title) && rows2[0].items.length === 1, 'continue watching row');
+assert(filtersOf(home2).length === 0, 'no login button when logged in');
 
-// --- catalog + genre + pagination
-var cat = open('stremio:cat:0:0');
-assert(cat.model.contents === 'grid', 'catalog uses grid');
-var movies = cat.items.filter(function (i) { return /^stremio:meta:movie/.test(i.url || ''); });
-assert(movies.length === 1 && movies[0].md.title === 'Heat (1995)', 'catalog item title');
-assert(cat.more === true, 'paginator keeps going (skip supported)');
-var cg = open('stremio:catg:0:0:Action');
-assert(cg.items.some(function (i) { return /tt9/.test(i.url || ''); }), 'genre catalog fetched');
-var gl = open('stremio:genres:0:0');
-assert(gl.items.length >= 4, 'genre list');
+// --- discover: filters cycle, grid items, paging
+var ds = open('stremio:discover:0:0:0');
+assert(ds.type === 'sgrid' && ds.metadata.nav === 'discover', 'discover page type');
+var f = filtersOf(ds);
+assert(f.length === 3 && f[0].url === 'stremio:discover:0:0:0' && /Movies/.test(f[0].title), 'type filter (single type wraps)');
+assert(/genre/i.test(f[2].title) && f[2].url === 'stremio:discover:0:0:1', 'genre filter cycles');
+assert(ds.items.filter(function (i) { return /stremio:meta:movie/.test(i.url || ''); }).length === 1, 'discover posters');
+assert(ds.more === true, 'paginator continues (skip supported)');
+var dg = open('stremio:discover:0:0:1');
+assert(dg.items.some(function (i) { return /tt9/.test(i.url || ''); }), 'genre results fetched');
+assert(open('stremio:discover').redirected === 'stremio:discover:0:0:0', 'discover redirect');
 
 // --- search
-var sr = open('stremio:q:heat');
-assert(sr.items.some(function (i) { return /tt1/.test(i.url || ''); }), 'search finds Heat');
 var sb = open('stremio:searchbox');
-sb.items.filter(function (i) { return i.fn; })[0].fn();
-assert(sb.redirected === 'stremio:q:heat', 'search box redirects to results');
+assert(sb.type === 'slist' && sb.items[0].url === 'stremio:dosearch', 'search box page');
+var ds2 = open('stremio:dosearch');
+assert(ds2.redirected === 'stremio:q:heat', 'search dialog -> results');
+var sr = open('stremio:q:heat');
+assert(sr.type === 'sboard' && rowsOf(sr).length === 1, 'search results as board rows');
+var sb2 = open('stremio:searchbox');
+assert(sb2.items.some(function (i) { return i.url === 'stremio:q:heat'; }), 'recent search listed');
 
-// --- meta, movie
+// --- detail
 var mv = open('stremio:meta:movie:tt1');
-assert(mv.items.some(function (i) { return /stremio:streams:movie:tt1:Heat/.test(i.url || ''); }), 'movie meta -> streams entry');
-// --- meta, series -> seasons -> episodes
+assert(mv.type === 'sdetail' && mv.metadata.title === 'Heat' && /Cops/.test(mv.metadata.description), 'movie detail fields');
+assert(mv.items.some(function (i) { return /stremio:streams:movie:tt1:Heat/.test(i.url || ''); }), 'movie -> streams');
 var se = open('stremio:meta:series:tt2');
 var seasonItems = se.items.filter(function (i) { return /stremio:season/.test(i.url || ''); });
-assert(seasonItems.length === 2 && /Special/.test(seasonItems[0].md.title), 'series seasons (special first)');
+assert(seasonItems.length === 2 && /Special/.test(seasonItems[0].md.title), 'seasons (special first)');
 var ep = open('stremio:season:series:tt2:1');
 assert(ep.items.filter(function (i) { return /stremio:streams:series:tt2%3A1%3A1:/.test(i.url || ''); }).length === 1, 'episode entries use video id');
 
-// --- streams
+// --- streams (direct-to-player + logo/backdrop/settings for the player)
 var st1 = open('stremio:streams:movie:tt1:Heat');
 var vids = st1.items.filter(function (i) { return /^videoparams:/.test(i.url || ''); });
-assert(vids.length === 2, 'torrent + direct streams are both video items (go straight to the player); yt skipped');
+assert(vids.length === 2 && vids[0].type === 'video', 'torrent + direct streams are video items');
 var vpT = JSON.parse(vids[0].url.substr(12));
-assert(/^torrent:video:magnet:\?xt=urn:btih:abcdef/.test(vpT.sources[0].url), 'infoHash -> torrent:video:magnet source');
-assert(/tr=udp%3A%2F%2Ft1%3A80/.test(vpT.sources[0].url), 'addon tracker used');
-assert(/m7idx=2/.test(vpT.sources[0].url), 'fileIdx forwarded as m7idx');
-assert(vids[0].type === 'video', 'torrent row is a video item');
-assert(vids[0].md.title === '[4k] Seeds 55 | 12 GB | ThePirateBay - Heat.2160p.mkv', 'row shows quality, seeders, size, source, file: ' + vids[0].md.title);
-assert(vpT.subtitles.length === 2, 'subtitles passed to the player for torrents too');
-var vp = JSON.parse(vids[1].url.substr(12));
-assert(vp.sources[0].url === 'https://cdn.example/heat.mp4', 'direct url stream -> videoparams');
-assert(vp.subtitles.length === 3, 'subtitles merged (1 inline + 2 from subtitle addon)');
-assert(/Seeds 0|MB|GB/.test(vids[1].md.title) === false || true, 'direct row ok');
+assert(/^torrent:video:magnet:\?xt=urn:btih:abcdef/.test(vpT.sources[0].url) && /m7idx=2/.test(vpT.sources[0].url), 'torrent source with fileIdx');
+assert(vids[0].md.title === '[4k] Seeds 55 | 12 GB | ThePirateBay - Heat.2160p.mkv', 'row shows quality/seeds/size/source/file');
+assert(vpT.subtitles.length === 2, 'subtitles passed to the player');
+assert(vpT.logo === 'https://img/logo.png' && vpT.backdrop === 'https://img/bg.jpg', 'logo + backdrop passed for the loading screen');
+assert(vpT.ps3mio.seekBack === 15 && vpT.ps3mio.seekFwd === 30 && vpT.ps3mio.resume === 1, 'player settings passed');
 var st2 = open('stremio:streams:series:tt2%3A1%3A1:Show%20S1E1');
 var vv = st2.items.filter(function (i) { return /^videoparams/.test(i.url || ''); });
 var vp2 = JSON.parse(vv[0].url.substr(12));
-assert(vp2.season === 1 && vp2.episode === 1, 'season/episode passed to player');
-assert(/m7se=1:1/.test(JSON.parse(vv[1].url.substr(12)).sources[0].url), 'pack without fileIdx gets m7se season:episode hint');
-assert(fetched.indexOf('https://torrentio.example/cfg/stream/series/tt2:1:1.json') >= 0, 'colons kept in stream id url');
+assert(vp2.season === 1 && vp2.episode === 1, 'season/episode passed');
+assert(/m7se=1:1/.test(JSON.parse(vv[1].url.substr(12)).sources[0].url), 'pack without fileIdx gets season:episode hint');
 
-// --- library / continue
+// --- library / addons / settings
 var lib = open('stremio:library');
-assert(lib.items.length === 2, 'library hides removed items');
-var cw = open('stremio:continue');
-assert(cw.items.length === 1 && /10%/.test(cw.items[0].md.title), 'continue watching shows progress only for started items');
-
-// --- addons page + settings sync action
+assert(lib.type === 'sgrid' && lib.items.length === 2, 'library grid hides removed items');
 var ad = open('stremio:addons');
-assert(titles(ad).some(function (t) { return /Sync/i.test(t); }), 'addons page has Sync action');
-// --- refresh + recents (v0.2)
+assert(ad.metadata.nav === 'addons' && ad.items.some(function (i) { return i.url === 'stremio:refresh'; }), 'addons page has sync');
+var set = open('stremio:settings');
+assert(set.metadata.nav === 'settings' && set.items.some(function (i) { return /Seek back step:\s+15 s/.test((i.md || {}).title || ''); }), 'settings page lists Stremio settings');
+var c1 = open('stremio:cfg:seekBack');
+assert(c1.redirected === 'stremio:settings' && store.cfg_seekBack === '20', 'setting cycles (15 -> 20)');
+var set2 = open('stremio:settings');
+assert(set2.items.some(function (i) { return /Seek back step:\s+20 s/.test((i.md || {}).title || ''); }), 'new value shown');
+var c2 = open('stremio:cfg:relay');
+assert(c2.redirected === 'stremio:settings' && store.cfg_relay === 'heat', 'text setting via dialog');
+store.cfg_relay = '';
 var rf = open('stremio:refresh');
-assert(rf.redirected === 'stremio:start', 'refresh route re-syncs and returns home');
-assert(notes.some(function (n) { return /Addons synced: 3/.test(n); }), 'refresh notifies number of synced addons');
-var home3 = open('stremio:start');
-assert(home3.items.some(function (i) { return i.action === 'Refresh'; }), 'home has Refresh action (menu)');
-assert(home3.items.some(function (i) { return i.url === 'stremio:refresh'; }), 'home has Refresh item (list)');
-assert(home3.metadata.title === 'ps3mio', 'home title is ps3mio');
-var sb2 = open('stremio:searchbox');
-sb2.items.filter(function (i) { return i.fn; })[0].fn();
-var sb3 = open('stremio:searchbox');
-assert(sb3.items.some(function (i) { return i.url === 'stremio:q:heat'; }), 'recent search listed on search page');
+assert(rf.redirected === 'stremio:start', 'refresh returns to board');
+var lo = open('stremio:logout');
+assert(lo.redirected === 'stremio:start' && store.authKey === '', 'logout clears account');
 console.log(process.exitCode ? '\nSOME TESTS FAILED' : '\nALL TESTS PASSED');

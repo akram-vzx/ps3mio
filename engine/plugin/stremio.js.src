@@ -1,24 +1,20 @@
 /*
- * Stremio for Movian (PS3)
- * ------------------------
- * A tiny Stremio *addon-protocol* client written as a Movian plugin.
- *   - UI           : Movian's own GLW skin (controller friendly, no extra animations)
- *   - Player       : Movian's built-in player (libav + PS3 hardware decoder)
- *   - Torrents     : Movian's built-in BitTorrent backend (magnet: URLs)
- *   - Addons       : synced from the Stremio account, NEVER edited on the console
- *
+ * ps3mio - Stremio engine (built-in plugin)
+ * ----------------------------------------
+ * Talks to the Stremio API and addons directly. The UI is the ps3mio skin (Stremio look),
+ * the player is the Movian engine (libav + PS3 hardware decoder + BitTorrent).
  * ES5 only (Duktape). No external libraries.
  */
 (function () {
   var page = require('movian/page');
   var http = require('movian/http');
-  var settings = require('movian/settings');
   var store = require('movian/store');
   var service = require('movian/service');
   var popup = require('native/popup');
 
   var PFX = 'stremio:';
-  var UA = 'Stremio-PS3/0.1 (Movian)';
+  var UA = 'ps3mio/0.3 (Stremio client)';
+  var VERSION = '0.3.0';
   var CINEMETA = 'https://v3-cinemeta.strem.io/manifest.json';
   var SYNC_EVERY_MS = 6 * 3600 * 1000;
   var DEFAULT_TRACKERS = [
@@ -34,50 +30,38 @@
   var LOGO = (typeof Plugin !== 'undefined' && Plugin.path) ? Plugin.path + 'logo.png' : null;
 
   // ------------------------------------------------------------------
-  // Settings
+  // Stremio settings (the app's own settings page, stored in the plugin store)
   // ------------------------------------------------------------------
-  var cfg = {
-    lang: 'en',
-    api: 'https://api.strem.io',
-    link: 'https://link.stremio.com',
-    relay: '',
-    manual: '',
-    grid: true,
-    maxStreams: 60
-  };
+  var SEEKS = [['5', '5 s'], ['10', '10 s'], ['15', '15 s'], ['20', '20 s'], ['30', '30 s'], ['60', '60 s']];
+  var SETTINGS = [
+    { section: 'Player', key: 'seekBack', title: 'Seek back step', def: '15', opts: SEEKS },
+    { section: 'Player', key: 'seekFwd', title: 'Seek forward step', def: '30', opts: SEEKS },
+    { section: 'Player', key: 'resume', title: 'Resume playback', def: '1', opts: [['1', 'Always'], ['2', 'Ask'], ['0', 'Never']] },
+    { section: 'Streaming', key: 'maxStreams', title: 'Streams shown per addon', def: '60', opts: [['20', '20'], ['40', '40'], ['60', '60'], ['100', '100']] },
+    { section: 'Interface', key: 'lang', title: 'Language', def: 'en', opts: [['en', 'English'], ['ar', 'Arabic'], ['fr', 'Francais'], ['es', 'Espanol'], ['de', 'Deutsch'], ['it', 'Italiano'], ['pt', 'Portugues'], ['tr', 'Turkce']] },
+    { section: 'Advanced', key: 'relay', title: 'HTTP relay prefix (only if HTTPS fails)', def: '', text: true },
+    { section: 'Advanced', key: 'manual', title: 'Extra addon manifest URLs', def: '', text: true }
+  ];
 
-  var S = new settings.globalSettings('stremio', 'Stremio', LOGO,
-    'Stremio client for Movian');
-  S.createMultiOpt('lang', 'Language', [
-    ['en', 'English', true], ['ar', 'Arabic (may not shape correctly)'],
-    ['fr', 'Francais'], ['es', 'Espanol'], ['de', 'Deutsch'],
-    ['it', 'Italiano'], ['pt', 'Portugues'], ['tr', 'Turkce']
-  ], function (v) { cfg.lang = v; });
-  S.createBool('grid', 'Poster grid in catalogs', true, function (v) { cfg.grid = v; });
-  S.createInt('maxStreams', 'Max streams per addon', 60, 5, 200, 5, '',
-    function (v) { cfg.maxStreams = v; });
-  S.createDivider('Advanced');
-  S.createString('api', 'Stremio API server', 'https://api.strem.io',
-    function (v) { cfg.api = String(v).replace(/\/+$/, ''); });
-  S.createString('link', 'Stremio link server', 'https://link.stremio.com',
-    function (v) { cfg.link = String(v).replace(/\/+$/, ''); });
-  S.createString('relay', 'HTTP relay prefix (only if HTTPS fails)', '',
-    function (v) { cfg.relay = String(v); });
-  S.createString('manual', 'Extra addon manifest URLs (comma separated)', '',
-    function (v) { cfg.manual = String(v); _addons = null; });
-  S.createAction('sync', 'Sync addons from my Stremio account', function () {
-    var n = syncAddons();
-    popup.notify(typeof n === 'number' ? T('synced') + ': ' + n : T('need_login'), 4);
+  function settingOf(key) {
+    for (var i = 0; i < SETTINGS.length; i++) if (SETTINGS[i].key === key) return SETTINGS[i];
+    return null;
+  }
+  function cfgGet(key) {
+    var s = settingOf(key);
+    var v = st['cfg_' + key];
+    return (v === undefined || v === null || v === '') ? (s ? s.def : '') : String(v);
+  }
+  function cfgSet(key, v) {
+    st['cfg_' + key] = String(v);
+    if (key === 'manual') _addons = null;
+  }
+  var cfg = { api: 'https://api.strem.io', link: 'https://link.stremio.com' };
+  ['lang', 'relay', 'manual'].forEach(function (k) {
+    Object.defineProperty(cfg, k, { get: function () { return cfgGet(k); } });
   });
-  S.createAction('refresh', 'Refresh (re-sync addons, clear cache)', function () {
-    var n = refreshAll();
-    popup.notify(typeof n === 'number' ? T('synced') + ': ' + n : T('need_login'), 4);
-  });
-  S.createAction('logout', 'Log out', function () {
-    st.authKey = '';
-    st.addons = '[]';
-    _addons = null;
-    popup.notify(T('logged_out'), 3);
+  ['maxStreams', 'seekBack', 'seekFwd', 'resume'].forEach(function (k) {
+    Object.defineProperty(cfg, k, { get: function () { return parseInt(cfgGet(k), 10); } });
   });
 
   // ------------------------------------------------------------------
@@ -94,7 +78,6 @@
     return (I18N.en && I18N.en[k]) || k;
   }
 
-  // Movian's bundled font has no emoji / symbol glyphs -> strip them
   function clean(s) {
     if (s === undefined || s === null) return '';
     return String(s)
@@ -103,7 +86,9 @@
       .replace(/[ \t]+/g, ' ')
       .replace(/^\s+|\s+$/g, '');
   }
+
   function oneLine(s) { return clean(s).replace(/\s*[\r\n]+\s*/g, ' | '); }
+
   function firstLine(s) { return clean(s).split(/[\r\n]+/)[0] || ''; }
 
   function viaRelay(url) {
@@ -139,7 +124,9 @@
   }
 
   function enc(s) { return encodeURIComponent(s); }
+
   function encId(id) { return enc(id).replace(/%3A/gi, ':'); }
+
   function decode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
   function slim(m) {
@@ -157,9 +144,6 @@
     return String(url).replace(/\/manifest\.json.*$/, '').replace(/\/+$/, '');
   }
 
-  // ------------------------------------------------------------------
-  // Addons (synced from the account, stored locally)
-  // ------------------------------------------------------------------
   function syncAddons() {
     if (!st.authKey) return 'login';
     var r = api('addonCollectionGet',
@@ -232,9 +216,6 @@
     return a.base + '/' + res + '/' + type + '/' + encId(id) + '.json';
   }
 
-  // ------------------------------------------------------------------
-  // Catalog helpers
-  // ------------------------------------------------------------------
   function catInfo(c) {
     var sup = {}, req = {}, genres = null;
     (c.extra || []).forEach(function (e) {
@@ -274,10 +255,6 @@
     return clean(c.name || c.id) + ' - ' + typeName(c.type) + '  [' + clean(a.m.name) + ']';
   }
 
-  function hint(pg) {
-    pg.appendPassiveItem('separator', '', { title: T('hint') });
-  }
-
   function img(u) { return u ? viaRelay(u) : undefined; }
 
   function metaTitle(m) {
@@ -298,9 +275,6 @@
     return pg.appendItem(PFX + 'meta:' + type + ':' + enc(m.id), 'directory', md);
   }
 
-  // ------------------------------------------------------------------
-  // Refresh + recent searches (typing on a controller is slow)
-  // ------------------------------------------------------------------
   function refreshAll() {
     metaCache = {};
     metaCacheKeys = [];
@@ -312,177 +286,13 @@
   function getRecents() {
     try { var r = JSON.parse(st.recent || '[]'); return r.length ? r : []; } catch (e) { return []; }
   }
+
   function addRecent(q) {
     var r = getRecents(), out = [q];
     r.forEach(function (x) { if (x !== q && out.length < 8) out.push(x); });
     st.recent = JSON.stringify(out);
   }
 
-  new page.Route('^stremio:refresh$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('refresh');
-    pg.loading = true;
-    var n = refreshAll();
-    pg.loading = false;
-    if (typeof n === 'number') popup.notify(T('synced') + ': ' + n, 3);
-    else if (n === 'error') popup.notify(T('net_error') + (lastErr ? ': ' + lastErr : ''), 5);
-    pg.redirect(PFX + 'start');
-  });
-
-  // ------------------------------------------------------------------
-  // Home / Board
-  // ------------------------------------------------------------------
-  new page.Route('^stremio:start$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = 'ps3mio';
-    pg.metadata.logo = LOGO;
-    hint(pg);
-    pg.appendAction(T('refresh'), function () { pg.redirect(PFX + 'refresh'); });
-    pg.loading = true;
-
-    if (st.authKey) {
-      var last = parseInt(st.syncedAt || '0', 10);
-      if (!last || new Date().getTime() - last > SYNC_EVERY_MS) syncAddons();
-    }
-    var addons = getAddons();
-    pg.loading = false;
-
-    if (!st.authKey) {
-      pg.appendItem(PFX + 'login', 'directory', { title: T('phone_login') });
-      pg.appendItem(PFX + 'loginmail', 'directory', { title: T('email_login') });
-      pg.appendPassiveItem('separator', '', { title: T('not_logged') });
-    } else {
-      pg.appendItem(PFX + 'continue', 'directory', { title: T('cw') });
-      pg.appendItem(PFX + 'library', 'directory', { title: T('library') });
-    }
-    pg.appendItem(PFX + 'searchbox', 'directory', { title: T('search') });
-
-    pg.appendPassiveItem('separator', '', { title: T('board') + ' / ' + T('discover') });
-    var n = 0;
-    addons.forEach(function (a, ai) {
-      (a.m.catalogs || []).forEach(function (c, ci) {
-        if (!browsable(c)) return;
-        pg.appendItem(PFX + 'cat:' + ai + ':' + ci, 'directory', { title: catTitle(a, c) });
-        n++;
-      });
-    });
-    if (!n) pg.appendPassiveItem('separator', '', { title: lastErr ? T('net_error') + ': ' + lastErr : T('no_results') });
-
-    pg.appendPassiveItem('separator', '', {});
-    pg.appendItem(PFX + 'refresh', 'directory', { title: T('refresh') });
-    pg.appendItem(PFX + 'addons', 'directory', { title: T('addons') });
-  });
-
-  // ------------------------------------------------------------------
-  // Catalog (with paging + genre filter)
-  // ------------------------------------------------------------------
-  function showCatalog(pg, ai, ci, genre) {
-    var addons = getAddons();
-    var a = addons[ai];
-    var c = a && a.m.catalogs[ci];
-    pg.type = 'directory';
-    if (!c) { pg.error('Catalog not found - sync addons again'); return; }
-    var info = catInfo(c);
-    pg.metadata.title = clean(c.name || c.id) + ' - ' + typeName(c.type);
-    if (cfg.grid) pg.model.contents = 'grid';
-    if (!genre && info.req.genre && info.genres) genre = info.genres[0];
-
-    if (info.genres) {
-      pg.appendItem(PFX + 'genres:' + ai + ':' + ci, 'directory',
-        { title: T('genre') + ': ' + (genre || T('all')) });
-    }
-
-    var skip = 0;
-    var canSkip = !!info.sup.skip;
-    pg.loading = true;
-    function load() {
-      var extra = {};
-      if (genre) extra.genre = genre;
-      if (skip) extra.skip = skip;
-      var r = fetchJSON(catUrl(a, c, extra), { cache: 120 });
-      pg.loading = false;
-      if (!r || !r.metas) {
-        if (!skip) pg.error(T('net_error') + (lastErr ? ': ' + lastErr : ''));
-        pg.haveMore(false);
-        return;
-      }
-      r.metas.forEach(function (m) { appendMeta(pg, m, c.type); });
-      skip += r.metas.length;
-      pg.haveMore(canSkip && r.metas.length > 0);
-    }
-    pg.asyncPaginator = load;
-    load();
-  }
-
-  new page.Route('^stremio:cat:(\\d+):(\\d+)$', function (pg, ai, ci) {
-    showCatalog(pg, parseInt(ai, 10), parseInt(ci, 10), null);
-  });
-  new page.Route('^stremio:catg:(\\d+):(\\d+):(.+)$', function (pg, ai, ci, g) {
-    showCatalog(pg, parseInt(ai, 10), parseInt(ci, 10), decode(g));
-  });
-  new page.Route('^stremio:genres:(\\d+):(\\d+)$', function (pg, ai, ci) {
-    var a = getAddons()[parseInt(ai, 10)];
-    var c = a && a.m.catalogs[parseInt(ci, 10)];
-    pg.type = 'directory';
-    pg.metadata.title = T('genre');
-    hint(pg);
-    if (!c) return;
-    pg.appendItem(PFX + 'cat:' + ai + ':' + ci, 'directory', { title: T('all') });
-    var info = catInfo(c);
-    (info.genres || []).forEach(function (g) {
-      pg.appendItem(PFX + 'catg:' + ai + ':' + ci + ':' + enc(g), 'directory', { title: clean(g) });
-    });
-  });
-
-  // ------------------------------------------------------------------
-  // Search (own page + Movian global searcher)
-  // ------------------------------------------------------------------
-  function searchInto(pg, query) {
-    var addons = getAddons();
-    var total = 0;
-    pg.loading = true;
-    addons.forEach(function (a) {
-      (a.m.catalogs || []).forEach(function (c) {
-        var info = catInfo(c);
-        if (!info.sup.search) return;
-        var r = fetchJSON(catUrl(a, c, { search: query }), { cache: 60 });
-        if (!r || !r.metas || !r.metas.length) return;
-        pg.appendPassiveItem('separator', '',
-          { title: clean(c.name || c.id) + ' - ' + typeName(c.type) + ' [' + clean(a.m.name) + ']' });
-        r.metas.slice(0, 30).forEach(function (m) { appendMeta(pg, m, c.type); total++; });
-      });
-    });
-    pg.loading = false;
-    if (!total) pg.appendPassiveItem('separator', '', { title: T('no_results') });
-  }
-
-  new page.Route('^stremio:searchbox$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('search');
-    hint(pg);
-    pg.appendAction(T('search_btn'), function () {
-      var r = popup.textDialog(T('search') + ':', true, true);
-      if (r && !r.rejected && r.input) { addRecent(r.input); pg.redirect(PFX + 'q:' + enc(r.input)); }
-    });
-    var rec = getRecents();
-    if (rec.length) pg.appendPassiveItem('separator', '', { title: T('recent') });
-    rec.forEach(function (q) { pg.appendItem(PFX + 'q:' + enc(q), 'directory', { title: clean(q) }); });
-  });
-  new page.Route('^stremio:q:(.*)$', function (pg, q) {
-    pg.type = 'directory';
-    var query = decode(q);
-    pg.metadata.title = T('search') + ': ' + query;
-    if (cfg.grid) pg.model.contents = 'grid';
-    searchInto(pg, query);
-  });
-  new page.Searcher('Stremio', LOGO, function (pg, query) {
-    pg.type = 'directory';
-    searchInto(pg, query);
-  });
-
-  // ------------------------------------------------------------------
-  // Meta (details) -> seasons -> episodes -> streams
-  // ------------------------------------------------------------------
   function getMeta(type, id) {
     var key = type + '|' + id;
     if (metaCache[key]) return metaCache[key];
@@ -531,63 +341,6 @@
     return d.join('\n');
   }
 
-  new page.Route('^stremio:meta:([^:]+):(.+)$', function (pg, type, eid) {
-    var id = decode(eid);
-    pg.type = 'directory';
-    pg.loading = true;
-    var meta = getMeta(type, id);
-    pg.loading = false;
-    hint(pg);
-    if (!meta) {
-      // No meta addon: still allow streams for the bare id
-      pg.metadata.title = id;
-      pg.appendItem(PFX + 'streams:' + type + ':' + eid + ':' + enc(id), 'directory', { title: T('watch') });
-      return;
-    }
-    pg.metadata.title = clean(meta.name || id);
-    pg.metadata.icon = img(meta.poster);
-    var desc = metaDescription(meta);
-    var icon = img(meta.poster);
-
-    var seasons = (type !== 'movie' && meta.videos && meta.videos.length) ? seasonsOf(meta) : null;
-    if (!seasons) {
-      pg.appendItem(PFX + 'streams:' + type + ':' + eid + ':' + enc(meta.name || id), 'directory',
-        { title: T('watch'), icon: icon, description: desc });
-      return;
-    }
-    pg.appendPassiveItem('separator', '', { title: clean(meta.name) });
-    if (desc) pg.appendPassiveItem('separator', '', { title: firstLine(desc) });
-    seasons.list.forEach(function (s) {
-      pg.appendItem(PFX + 'season:' + type + ':' + eid + ':' + s, 'directory', {
-        title: (s === 0 ? T('special') : T('season') + ' ' + s) + '  (' + seasons.map[s].length + ')',
-        icon: icon, description: desc
-      });
-    });
-  });
-
-  new page.Route('^stremio:season:([^:]+):([^:]+):(\\d+)$', function (pg, type, eid, s) {
-    var id = decode(eid);
-    var meta = getMeta(type, id);
-    pg.type = 'directory';
-    pg.metadata.title = clean(meta ? meta.name : id) + ' - ' + (parseInt(s, 10) === 0 ? T('special') : T('season') + ' ' + s);
-    hint(pg);
-    if (!meta) return;
-    var seasons = seasonsOf(meta);
-    (seasons.map[parseInt(s, 10)] || []).forEach(function (v) {
-      var ep = v.episode || v.number;
-      var title = (ep ? ep + '. ' : '') + clean(v.title || v.name || T('episode'));
-      var d = [];
-      if (v.released) d.push(String(v.released).substr(0, 10));
-      if (v.overview || v.description) d.push(clean(v.overview || v.description));
-      pg.appendItem(PFX + 'streams:' + type + ':' + enc(v.id) + ':' +
-        enc(clean(meta.name) + ' S' + s + 'E' + (ep || '?')), 'directory',
-        { title: title, icon: img(v.thumbnail), description: d.join('\n') });
-    });
-  });
-
-  // ------------------------------------------------------------------
-  // Streams
-  // ------------------------------------------------------------------
   function magnetOf(s, title, se) {
     var m = 'magnet:?xt=urn:btih:' + s.infoHash;
     if (title) m += '&dn=' + enc(title);
@@ -603,7 +356,6 @@
     return m;
   }
 
-  // Torrentio & co. put seeders / size in the stream title using emoji; the console font has none.
   function mapEmoji(t) {
     return String(t === undefined || t === null ? '' : t)
       .replace(/\uD83D\uDC64/g, 'Seeds ')
@@ -620,7 +372,6 @@
     return Math.round(b / 1024) + ' KB';
   }
 
-  // One list row per stream:  [4k] Seeds 120 | 2.1 GB | ThePirateBay - file name
   function streamRow(a, s) {
     var nameLines = clean(mapEmoji(s.name || a.m.name)).split(/[\r\n]+/);
     var qual = nameLines.slice(1).join(' ');
@@ -669,16 +420,314 @@
     return null;
   }
 
+  function loadLibrary() {
+    if (!st.authKey) return null;
+    var r = api('datastoreGet', { authKey: st.authKey, collection: 'libraryItem', ids: [], all: true });
+    if (!r || !r.result) return null;
+    var out = [];
+    r.result.forEach(function (it) { if (it && !it.removed) out.push(it); });
+    out.sort(function (x, y) { return String(y._mtime || '').localeCompare(String(x._mtime || '')); });
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // Model helpers for the ps3mio skin pages (board rows, filters, details)
+  // ------------------------------------------------------------------
+  function nodeItem(node, url, title, icon) {
+    node.url = url;
+    node.type = 'directory';
+    node.metadata.title = title;
+    if (icon) node.metadata.icon = icon;
+  }
+
+  function writeRow(pg, idx, title, metas, fallbackType) {
+    var r = pg.model.rows['r' + idx];
+    r.title = title;
+    for (var k = 0; k < metas.length; k++) {
+      var m = metas[k];
+      nodeItem(r.items['i' + k], PFX + 'meta:' + (m.type || fallbackType) + ':' + enc(m.id),
+        metaTitle(m), img(m.poster || m.logo));
+    }
+  }
+
+  function setFilter(pg, id, title, url) {
+    var f = pg.model.filters[id];
+    f.title = title;
+    f.url = url;
+  }
+
+  function setNav(pg, type, nav, title) {
+    pg.type = type;
+    pg.metadata.nav = nav;
+    pg.metadata.title = title;
+  }
+
+  new page.Route('^stremio:refresh$', function (pg) {
+    setNav(pg, 'slist', 'board', T('refresh'));
+    pg.loading = true;
+    var n = refreshAll();
+    pg.loading = false;
+    if (typeof n === 'number') popup.notify(T('synced') + ': ' + n, 3);
+    else if (n === 'error') popup.notify(T('net_error') + (lastErr ? ': ' + lastErr : ''), 5);
+    pg.redirect(PFX + 'start');
+  });
+
+  // ------------------------------------------------------------------
+  // Board (home): Continue Watching + one row per addon catalog
+  // ------------------------------------------------------------------
+  new page.Route('^stremio:start$', function (pg) {
+    setNav(pg, 'sboard', 'board', 'ps3mio');
+    pg.loading = true;
+    if (st.authKey) {
+      var last = parseInt(st.syncedAt || '0', 10);
+      if (!last || new Date().getTime() - last > SYNC_EVERY_MS) syncAddons();
+    } else {
+      setFilter(pg, 'login', T('phone_login'), PFX + 'login');
+    }
+    var addons = getAddons();
+    var n = 0;
+    if (st.authKey) {
+      var lib = loadLibrary() || [];
+      var cont = [];
+      lib.forEach(function (it) {
+        var s = it.state || {};
+        if (s.timeOffset > 0) cont.push({ id: it._id, type: it.type, name: it.name, poster: it.poster });
+      });
+      if (cont.length) writeRow(pg, n++, T('cw'), cont.slice(0, 20), 'movie');
+    }
+    var rows = 0;
+    addons.forEach(function (a) {
+      (a.m.catalogs || []).forEach(function (c) {
+        if (rows >= 10 || !browsable(c)) return;
+        var info = catInfo(c);
+        var extra = {};
+        if (info.req.genre && info.genres && info.genres.length) extra.genre = info.genres[0];
+        var r = fetchJSON(catUrl(a, c, extra), { cache: 120 });
+        if (!r || !r.metas || !r.metas.length) return;
+        writeRow(pg, n++, clean(c.name || c.id) + ' - ' + typeName(c.type), r.metas.slice(0, 20), c.type);
+        rows++;
+      });
+    });
+    pg.loading = false;
+    if (!n) pg.metadata.notice = lastErr ? T('net_error') + ': ' + lastErr : T('no_results');
+  });
+
+  // ------------------------------------------------------------------
+  // Discover (type / catalog / genre filters + paged poster grid)
+  // ------------------------------------------------------------------
+  function typeRank(t) { return t === 'movie' ? 0 : (t === 'series' ? 1 : 2); }
+
+  function fillGrid(pg, a, c, genre) {
+    var info = catInfo(c);
+    var skip = 0;
+    var canSkip = !!info.sup.skip;
+    pg.loading = true;
+    function load() {
+      var extra = {};
+      if (genre) extra.genre = genre;
+      if (skip) extra.skip = skip;
+      var r = fetchJSON(catUrl(a, c, extra), { cache: 120 });
+      pg.loading = false;
+      if (!r || !r.metas) {
+        if (!skip) pg.metadata.notice = T('net_error') + (lastErr ? ': ' + lastErr : '');
+        pg.haveMore(false);
+        return;
+      }
+      r.metas.forEach(function (m) { appendMeta(pg, m, c.type); });
+      skip += r.metas.length;
+      pg.haveMore(canSkip && r.metas.length > 0);
+    }
+    pg.asyncPaginator = load;
+    load();
+  }
+
+  new page.Route('^stremio:discover$', function (pg) {
+    pg.redirect(PFX + 'discover:0:0:0');
+  });
+
+  new page.Route('^stremio:discover:(\\d+):(\\d+):(\\d+)$', function (pg, t0, c0, g0) {
+    setNav(pg, 'sgrid', 'discover', T('discover'));
+    pg.loading = true;
+    var all = [];
+    getAddons().forEach(function (a) {
+      (a.m.catalogs || []).forEach(function (c) { if (browsable(c)) all.push({ a: a, c: c }); });
+    });
+    var types = [];
+    all.forEach(function (e) { if (types.indexOf(e.c.type) < 0) types.push(e.c.type); });
+    types.sort(function (x, y) { return typeRank(x) - typeRank(y); });
+    if (!types.length) {
+      pg.loading = false;
+      pg.metadata.notice = lastErr ? T('net_error') + ': ' + lastErr : T('no_results');
+      return;
+    }
+    var ti = Math.min(parseInt(t0, 10), types.length - 1);
+    var entries = all.filter(function (e) { return e.c.type === types[ti]; });
+    var ci = Math.min(parseInt(c0, 10), entries.length - 1);
+    var e = entries[ci];
+    var info = catInfo(e.c);
+    var genres = info.req.genre ? [] : [''];
+    genres = genres.concat(info.genres || []);
+    var gi = Math.min(parseInt(g0, 10), Math.max(genres.length - 1, 0));
+    var genre = genres[gi] || '';
+    setFilter(pg, 'f0', T('Type') + ': ' + typeName(types[ti]), PFX + 'discover:' + ((ti + 1) % types.length) + ':0:0');
+    setFilter(pg, 'f1', T('Catalog') + ': ' + clean(e.c.name || e.c.id) + ' [' + clean(e.a.m.name) + ']',
+      PFX + 'discover:' + ti + ':' + ((ci + 1) % entries.length) + ':0');
+    if (genres.length > 1) {
+      setFilter(pg, 'f2', T('genre') + ': ' + (genre || T('all')),
+        PFX + 'discover:' + ti + ':' + ci + ':' + ((gi + 1) % genres.length));
+    }
+    fillGrid(pg, e.a, e.c, genre);
+  });
+
+  // ------------------------------------------------------------------
+  // Library
+  // ------------------------------------------------------------------
+  new page.Route('^stremio:library$', function (pg) {
+    setNav(pg, 'sgrid', 'library', T('library'));
+    pg.loading = true;
+    var items = loadLibrary();
+    pg.loading = false;
+    if (!items) {
+      pg.metadata.notice = st.authKey ? T('net_error') + (lastErr ? ': ' + lastErr : '') : T('need_login');
+      return;
+    }
+    if (!items.length) pg.metadata.notice = T('no_results');
+    items.forEach(function (it) {
+      appendMeta(pg, { id: it._id, type: it.type, name: it.name, poster: it.poster }, it.type);
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Search
+  // ------------------------------------------------------------------
+  function searchRows(pg, query) {
+    var n = 0;
+    pg.loading = true;
+    getAddons().forEach(function (a) {
+      (a.m.catalogs || []).forEach(function (c) {
+        if (!catInfo(c).sup.search) return;
+        var r = fetchJSON(catUrl(a, c, { search: query }), { cache: 60 });
+        if (!r || !r.metas || !r.metas.length) return;
+        writeRow(pg, n++, clean(c.name || c.id) + ' - ' + typeName(c.type) + ' [' + clean(a.m.name) + ']',
+          r.metas.slice(0, 24), c.type);
+      });
+    });
+    pg.loading = false;
+    if (!n) pg.metadata.notice = T('no_results');
+  }
+
+  new page.Route('^stremio:searchbox$', function (pg) {
+    setNav(pg, 'slist', 'search', T('search'));
+    pg.appendItem(PFX + 'dosearch', 'directory', { title: T('search_btn') });
+    var rec = getRecents();
+    if (rec.length) pg.appendPassiveItem('separator', '', { title: T('recent') });
+    rec.forEach(function (q) { pg.appendItem(PFX + 'q:' + enc(q), 'directory', { title: clean(q) }); });
+  });
+
+  new page.Route('^stremio:dosearch$', function (pg) {
+    setNav(pg, 'slist', 'search', T('search'));
+    var r = popup.textDialog(T('search') + ':', true, true);
+    if (r && !r.rejected && r.input) {
+      addRecent(r.input);
+      pg.redirect(PFX + 'q:' + enc(r.input));
+    } else {
+      pg.redirect(PFX + 'searchbox');
+    }
+  });
+
+  new page.Route('^stremio:q:(.*)$', function (pg, q) {
+    var query = decode(q);
+    setNav(pg, 'sboard', 'search', T('search') + ': ' + query);
+    searchRows(pg, query);
+  });
+
+  new page.Searcher('Stremio', LOGO, function (pg, query) {
+    pg.type = 'directory';
+    getAddons().forEach(function (a) {
+      (a.m.catalogs || []).forEach(function (c) {
+        if (!catInfo(c).sup.search) return;
+        var r = fetchJSON(catUrl(a, c, { search: query }), { cache: 60 });
+        if (r && r.metas) r.metas.slice(0, 30).forEach(function (m) { appendMeta(pg, m, c.type); });
+      });
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Detail page -> seasons -> episodes -> streams
+  // ------------------------------------------------------------------
+  new page.Route('^stremio:meta:([^:]+):(.+)$', function (pg, type, eid) {
+    var id = decode(eid);
+    pg.type = 'sdetail';
+    pg.loading = true;
+    var meta = getMeta(type, id);
+    pg.loading = false;
+    if (!meta) {
+      pg.metadata.title = id;
+      pg.appendItem(PFX + 'streams:' + type + ':' + eid + ':' + enc(id), 'directory', { title: T('watch') });
+      return;
+    }
+    var name = clean(meta.name || id);
+    pg.metadata.title = name;
+    if (meta.poster) pg.metadata.icon = img(meta.poster);
+    if (meta.logo) pg.metadata.logo = img(meta.logo);
+    if (meta.background) pg.metadata.background = img(meta.background);
+    var info = [];
+    if (meta.releaseInfo || meta.year) info.push(clean(meta.releaseInfo || meta.year));
+    if (meta.runtime) info.push(clean(meta.runtime));
+    if (meta.imdbRating) info.push('IMDb ' + meta.imdbRating);
+    pg.metadata.info = info.join('    ');
+    if (meta.genres && meta.genres.length) pg.metadata.genres = clean(meta.genres.join(', '));
+    var desc = clean(meta.description || '');
+    if (desc.length > 700) desc = desc.substr(0, 697) + '...';
+    pg.metadata.description = desc;
+    if (meta.cast && meta.cast.length) pg.metadata.cast = T('cast') + ': ' + clean(meta.cast.slice(0, 8).join(', '));
+
+    var seasons = (type !== 'movie' && meta.videos && meta.videos.length) ? seasonsOf(meta) : null;
+    if (!seasons) {
+      pg.appendItem(PFX + 'streams:' + type + ':' + eid + ':' + enc(meta.name || id), 'directory',
+        { title: T('watch') });
+      return;
+    }
+    seasons.list.forEach(function (s) {
+      pg.appendItem(PFX + 'season:' + type + ':' + eid + ':' + s, 'directory', {
+        title: (s === 0 ? T('special') : T('season') + ' ' + s) + '  (' + seasons.map[s].length + ')'
+      });
+    });
+  });
+
+  new page.Route('^stremio:season:([^:]+):([^:]+):(\\d+)$', function (pg, type, eid, s) {
+    var id = decode(eid);
+    var meta = getMeta(type, id);
+    var sn = parseInt(s, 10);
+    setNav(pg, 'slist', 'board', clean(meta ? meta.name : id) + ' - ' + (sn === 0 ? T('special') : T('season') + ' ' + s));
+    if (!meta) return;
+    var seasons = seasonsOf(meta);
+    (seasons.map[sn] || []).forEach(function (v) {
+      var ep = v.episode || v.number;
+      var title = (ep ? ep + '. ' : '') + clean(v.title || v.name || T('episode'));
+      var d = [];
+      if (v.released) d.push(String(v.released).substr(0, 10));
+      if (v.overview || v.description) d.push(clean(v.overview || v.description));
+      var md = { title: title, description: d.join('  -  ') };
+      if (v.thumbnail) md.icon = img(v.thumbnail);
+      pg.appendItem(PFX + 'streams:' + type + ':' + enc(v.id) + ':' +
+        enc(clean(meta.name) + ' S' + sn + 'E' + (ep || '?')), 'directory', md);
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Streams
+  // ------------------------------------------------------------------
   new page.Route('^stremio:streams:([^:]+):([^:]+):(.*)$', function (pg, type, eid, etitle) {
     var id = decode(eid);
     var title = decode(etitle) || id;
-    pg.type = 'directory';
-    pg.metadata.title = clean(title);
-    hint(pg);
+    setNav(pg, 'slist', 'board', clean(title));
     pg.loading = true;
 
     var subs = null;
     var se = (type === 'series') ? seasonEpisodeOf(id) : null;
+    var baseId = se ? id.split(':').slice(0, -2).join(':') : id;
+    var m0 = metaCache[type + '|' + baseId] || null;
     var total = 0;
 
     function videoItem(url, row, s) {
@@ -690,8 +739,11 @@
         subtitles: (s.subtitles && s.subtitles.length ? s.subtitles.map(function (x) {
           return { title: clean(x.lang || 'sub'), url: x.url, language: x.lang, source: 'stream' };
         }) : []).concat(subs),
-        no_fs_scan: 1
+        no_fs_scan: 1,
+        ps3mio: { seekBack: cfg.seekBack, seekFwd: cfg.seekFwd, resume: cfg.resume }
       };
+      if (m0 && m0.logo) vp.logo = img(m0.logo);
+      if (m0 && (m0.background || m0.poster)) vp.backdrop = img(m0.background || m0.poster);
       if (se) { vp.season = se.season; vp.episode = se.episode; }
       pg.appendItem('videoparams:' + JSON.stringify(vp), 'video',
         { title: row.title, description: row.description });
@@ -712,7 +764,6 @@
         } else if (s.url && /^https?:/i.test(s.url)) {
           url = viaRelay(s.url);
         }
-        // ytId / externalUrl streams are not playable on the console -> skipped
         if (!url) return;
         if (!added) pg.appendPassiveItem('separator', '', { title: clean(a.m.name) });
         videoItem(url, row, s);
@@ -724,108 +775,102 @@
   });
 
   // ------------------------------------------------------------------
-  // Library / Continue watching (read-only)
-  // ------------------------------------------------------------------
-  function loadLibrary() {
-    if (!st.authKey) return null;
-    var r = api('datastoreGet', { authKey: st.authKey, collection: 'libraryItem', ids: [], all: true });
-    if (!r || !r.result) return null;
-    var out = [];
-    r.result.forEach(function (it) { if (it && !it.removed) out.push(it); });
-    out.sort(function (x, y) { return String(y._mtime || '').localeCompare(String(x._mtime || '')); });
-    return out;
-  }
-
-  new page.Route('^stremio:library$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('library');
-    if (cfg.grid) pg.model.contents = 'grid';
-    pg.loading = true;
-    var items = loadLibrary();
-    pg.loading = false;
-    if (!items) { pg.error(st.authKey ? T('net_error') + (lastErr ? ': ' + lastErr : '') : T('need_login')); return; }
-    items.forEach(function (it) {
-      appendMeta(pg, { id: it._id, type: it.type, name: it.name, poster: it.poster }, it.type);
-    });
-  });
-
-  new page.Route('^stremio:continue$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('cw');
-    if (cfg.grid) pg.model.contents = 'grid';
-    pg.loading = true;
-    var items = loadLibrary();
-    pg.loading = false;
-    if (!items) { pg.error(st.authKey ? T('net_error') + (lastErr ? ': ' + lastErr : '') : T('need_login')); return; }
-    items.forEach(function (it) {
-      var s = it.state || {};
-      if (!s.timeOffset || s.timeOffset <= 0) return;
-      var pct = s.duration ? Math.round(100 * s.timeOffset / s.duration) : 0;
-      var vid = (it.type === 'series' && s.video_id) ? s.video_id : it._id;
-      var label = clean(it.name) + (it.type === 'series' && s.video_id ? '  (' + clean(s.video_id.split(':').slice(1).join('x')) + ')' : '') +
-        (pct ? '  ' + pct + '%' : '');
-      pg.appendItem(PFX + 'streams:' + it.type + ':' + enc(vid) + ':' + enc(it.name), 'directory',
-        { title: label, icon: img(it.poster) });
-    });
-  });
-
-  // ------------------------------------------------------------------
-  // Addons page (sync only - editing is done from phone / PC)
+  // Addons (read-only; edit them from your phone or PC)
   // ------------------------------------------------------------------
   new page.Route('^stremio:addons$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('addons');
-    hint(pg);
+    setNav(pg, 'slist', 'addons', T('addons'));
     pg.appendPassiveItem('separator', '', { title: T('addons_help') });
-    pg.appendAction(T('sync'), function () {
-      pg.loading = true;
-      var n = syncAddons();
-      pg.loading = false;
-      if (typeof n === 'number') { popup.notify(T('synced') + ': ' + n, 4); pg.redirect(PFX + 'addons'); }
-      else popup.notify(n === 'login' ? T('need_login') : T('net_error') + (lastErr ? ': ' + lastErr : ''), 5);
-    });
-    if (st.authKey) {
-      pg.appendAction(T('logout'), function () {
-        st.authKey = ''; st.addons = '[]'; _addons = null;
-        popup.notify(T('logged_out'), 3);
-        pg.redirect(PFX + 'start');
-      });
-    } else {
+    pg.appendItem(PFX + 'refresh', 'directory', { title: T('sync') });
+    if (!st.authKey) {
       pg.appendItem(PFX + 'login', 'directory', { title: T('phone_login') });
       pg.appendItem(PFX + 'loginmail', 'directory', { title: T('email_login') });
     }
     getAddons().forEach(function (a) {
-      pg.appendPassiveItem('separator', '', {
-        title: clean(a.m.name) + (a.m.version ? '  v' + clean(a.m.version) : '')
-      });
-      var types = (a.m.types || []).join(', ');
       var res = [];
       (a.m.resources || []).forEach(function (r) { res.push(typeof r === 'string' ? r : r.name); });
-      pg.appendItem(PFX + 'addons', 'directory', {
-        title: clean(a.m.description || a.m.id || ''),
-        description: clean(types + '  /  ' + res.join(', '))
-      });
+      var md = {
+        title: clean(a.m.name) + (a.m.version ? '   v' + clean(a.m.version) : ''),
+        description: clean(a.m.description || '') + (res.length ? '   [' + res.join(', ') + ']' : '')
+      };
+      pg.appendItem(PFX + 'addons', 'directory', md);
     });
   });
 
   // ------------------------------------------------------------------
-  // Login: link code (phone/PC approves) and e-mail fallback
+  // Settings (Stremio-style settings page; values live in the plugin store)
+  // ------------------------------------------------------------------
+  function valueLabel(s) {
+    var v = cfgGet(s.key);
+    if (s.text) return v ? v : '-';
+    for (var i = 0; i < s.opts.length; i++) if (s.opts[i][0] === v) return s.opts[i][1];
+    return v;
+  }
+
+  new page.Route('^stremio:settings$', function (pg) {
+    setNav(pg, 'slist', 'settings', T('settings'));
+    pg.appendPassiveItem('separator', '', { title: T('Account') });
+    pg.appendItem(PFX + 'settings', 'directory', { title: st.authKey ? T('logged_ok') : T('not_logged') });
+    if (st.authKey) {
+      pg.appendItem(PFX + 'logout', 'directory', { title: T('logout') });
+    } else {
+      pg.appendItem(PFX + 'login', 'directory', { title: T('phone_login') });
+      pg.appendItem(PFX + 'loginmail', 'directory', { title: T('email_login') });
+    }
+    pg.appendItem(PFX + 'refresh', 'directory', { title: T('sync') });
+    var sec = '';
+    SETTINGS.forEach(function (s) {
+      if (s.section !== sec) {
+        sec = s.section;
+        pg.appendPassiveItem('separator', '', { title: T(sec) });
+      }
+      pg.appendItem(PFX + 'cfg:' + s.key, 'directory', { title: T(s.title) + ':   ' + valueLabel(s) });
+    });
+    pg.appendPassiveItem('separator', '', { title: T('Info') });
+    pg.appendItem(PFX + 'settings', 'directory', { title: 'ps3mio ' + VERSION + '  -  Stremio client' });
+  });
+
+  new page.Route('^stremio:cfg:(.+)$', function (pg, key) {
+    setNav(pg, 'slist', 'settings', T('settings'));
+    var s = settingOf(key);
+    if (s) {
+      if (s.text) {
+        var r = popup.textDialog(T(s.title) + ':', true, true);
+        if (r && !r.rejected && typeof r.input === 'string') cfgSet(key, r.input);
+      } else {
+        var cur = cfgGet(key), idx = -1;
+        for (var i = 0; i < s.opts.length; i++) if (s.opts[i][0] === cur) idx = i;
+        cfgSet(key, s.opts[(idx + 1) % s.opts.length][0]);
+      }
+    }
+    pg.redirect(PFX + 'settings');
+  });
+
+  new page.Route('^stremio:logout$', function (pg) {
+    setNav(pg, 'slist', 'settings', T('settings'));
+    st.authKey = '';
+    st.addons = '[]';
+    _addons = null;
+    popup.notify(T('logged_out'), 3);
+    pg.redirect(PFX + 'start');
+  });
+
+  // ------------------------------------------------------------------
+  // Login: link code (phone / PC approves) and e-mail fallback
   // ------------------------------------------------------------------
   new page.Route('^stremio:login$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('login');
+    setNav(pg, 'slist', 'settings', T('login'));
     pg.loading = true;
     var c = fetchJSON(cfg.link + '/api/v2/create?type=Create');
     pg.loading = false;
     if (!c || !c.result || !c.result.code) {
-      pg.error(T('link_fail') + (lastErr ? ' - ' + lastErr : ''));
+      pg.metadata.notice = T('link_fail') + (lastErr ? ' - ' + lastErr : '');
       return;
     }
     var code = c.result.code;
     pg.appendPassiveItem('separator', '', { title: T('link_1') });
-    pg.appendPassiveItem('separator', '', { title: String(c.result.link || 'https://link.stremio.com') });
+    pg.appendItem(PFX + 'login', 'directory', { title: String(c.result.link || 'https://link.stremio.com') });
     pg.appendPassiveItem('separator', '', { title: T('link_2') });
-    pg.appendPassiveItem('separator', '', { title: String(code) });
+    pg.appendItem(PFX + 'login', 'directory', { title: String(code) });
     pg.appendPassiveItem('separator', '', { title: T('link_wait') });
 
     var tries = 0;
@@ -845,13 +890,10 @@
   });
 
   new page.Route('^stremio:loginmail$', function (pg) {
-    pg.type = 'directory';
-    pg.metadata.title = T('login');
-    pg.appendAction(T('email_login'), function () {
-      var u = popup.textDialog(T('email') + ':', true, true);
-      if (!u || u.rejected || !u.input) return;
-      var p = popup.textDialog(T('password') + ':', true, true);
-      if (!p || p.rejected || !p.input) return;
+    setNav(pg, 'slist', 'settings', T('login'));
+    var u = popup.textDialog(T('email') + ':', true, true);
+    var p = (u && !u.rejected && u.input) ? popup.textDialog(T('password') + ':', true, true) : null;
+    if (u && p && !u.rejected && !p.rejected && u.input && p.input) {
       pg.loading = true;
       var r = api('login', { type: 'Auth', email: u.input, password: p.input, facebook: false });
       pg.loading = false;
@@ -860,19 +902,12 @@
         syncAddons();
         popup.notify(T('logged_ok'), 3);
         pg.redirect(PFX + 'start');
-      } else {
-        popup.notify((r && r.error && r.error.message) || (T('net_error') + (lastErr ? ': ' + lastErr : '')), 6);
+        return;
       }
-    });
+      popup.notify((r && r.error && r.error.message) || (T('net_error') + (lastErr ? ': ' + lastErr : '')), 6);
+    }
+    pg.redirect(PFX + 'settings');
   });
 
-  // ------------------------------------------------------------------
-  // Service entry on Movian's home screen + player hints
-  // ------------------------------------------------------------------
   service.create('Stremio', PFX + 'start', 'video', true, LOGO);
-
-  try {
-    var vs = new (require('movian/videoscrobbler').VideoScrobbler)();
-    vs.onstart = function () { popup.notify(T('player_hint'), 6); };
-  } catch (e) { /* optional */ }
 })();

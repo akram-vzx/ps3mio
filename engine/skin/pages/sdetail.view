@@ -1,0 +1,90 @@
+#import "skin://theme.view"
+#import "skin://nav.view"
+
+// Title page: poster, logo / title, info, genres, description + seasons / Watch button
+widget(container_x, {
+
+  StremioNav();
+
+  widget(container_z, {
+    filterConstraintX: true;
+
+    widget(list_y, {
+      id: "scrollable";
+      chaseFocus: true;
+      scrollThresholdTop: 3em;
+      scrollThresholdBottom: 3em;
+      padding: [1em, 0, 1em, 1em];
+
+      widget(container_x, {
+        margin: [0.5em, 1em, 0.5em, 1em];
+
+        widget(image, {
+          source: $self.model.metadata.icon;
+          width: 12em;
+          height: 18em;
+        });
+
+        widget(container_y, {
+          margin: [1.5em, 0, 0, 0];
+          filterConstraintX: true;
+
+          widget(image, {
+            source: $self.model.metadata.logo;
+            height: 6em;
+            aspectConstraint: true;
+          });
+
+          widget(label, {
+            autohide: true;
+            caption: select(isVoid($self.model.metadata.logo), $self.model.metadata.title, void);
+            size: 3em;
+            ellipsize: true;
+            filterConstraintX: true;
+          });
+
+          widget(label, {
+            autohide: true;
+            caption: $self.model.metadata.info;
+            size: 1.4em;
+            alpha: 0.7;
+            margin: [0, 0.6em, 0, 0];
+          });
+
+          widget(label, {
+            autohide: true;
+            caption: $self.model.metadata.genres;
+            size: 1.3em;
+            margin: [0, 0.3em, 0, 0.3em];
+          });
+
+          widget(label, {
+            autohide: true;
+            caption: $self.model.metadata.description;
+            size: 1.3em;
+            maxlines: 7;
+            filterConstraintX: true;
+            margin: [0, 0.5em, 0, 0.5em];
+          });
+
+          widget(label, {
+            autohide: true;
+            caption: $self.model.metadata.cast;
+            size: 1.1em;
+            alpha: 0.6;
+            maxlines: 2;
+            filterConstraintX: true;
+          });
+        });
+      });
+
+      cloner($self.model.nodes, loader, {
+        noInitialTransform: true;
+        alt: "skin://items/s/default.view";
+        source: "skin://items/s/" + $self.type + ".view";
+      });
+    });
+
+    ScrollBar("scrollable", 0, 0);
+  });
+});

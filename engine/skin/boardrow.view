@@ -1,0 +1,21 @@
+#import "skin://theme.view"
+
+// One titled, horizontally scrolling row of posters
+widget(container_y, {
+
+  widget(label, {
+    caption: $self.title;
+    size: 1.8em;
+    margin: [1em, 1em, 0, 0.3em];
+  });
+
+  widget(list_x, {
+    chaseFocus: true;
+    height: 15.6em;
+    margin: [0.5em, 0, 0.5em, 0];
+
+    cloner($self.items, loader, {
+      source: "skin://poster.view";
+    });
+  });
+});

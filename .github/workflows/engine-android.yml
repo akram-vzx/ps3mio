@@ -1,7 +1,12 @@
 # Engine track: Android build of the Movian engine with the ps3mio patch + built-in Stremio plugin.
-# This is the SAME engine/player as the PS3 build, so test here first. Manual run.
+# This is the SAME engine/player/UI as the PS3 build, so test here first.
+# Runs automatically on every push that touches engine/, or manually.
 name: Engine - Android APK
-on: workflow_dispatch
+on:
+  push:
+    branches: [main, master]
+    paths: ['engine/**', '.github/workflows/engine-android.yml']
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -23,10 +28,13 @@ jobs:
 
       - name: Apply ps3mio patch + branding
         run: |
-          python3 engine/ps3mio_patch.py movian --plugin engine/plugin
+          python3 engine/ps3mio_patch.py movian --plugin engine/plugin --skin engine/skin
           cd movian
           sed -i 's/ANDROID_TARGET_SDK_VERSION=21/ANDROID_TARGET_SDK_VERSION=23/' configure.android
           sed -i 's/android:label="@@APPNAME@@"/android:label="ps3mio"/' android/AndroidManifest.xml.in
+          for d in ldpi mdpi hdpi xhdpi xxhdpi; do
+            cp "$GITHUB_WORKSPACE/engine/icons/ic_launcher_$d.png" "android/res/drawable-$d/ic_launcher.png"
+          done
 
       - name: Android SDK pieces
         run: |

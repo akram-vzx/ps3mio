@@ -30,7 +30,7 @@ jobs:
           git clone --recursive --depth 1 https://github.com/Cruslan/PS3-Movian-Next.git next
 
       - name: Apply ps3mio patch
-        run: python3 engine/ps3mio_patch.py next --plugin engine/plugin
+        run: python3 engine/ps3mio_patch.py next --plugin engine/plugin --skin engine/skin
 
       - name: Prepare PS3 SDK (downloads ps3dev)
         working-directory: next

@@ -1,0 +1,89 @@
+// ps3mio - loading overlay.
+// While a video loads (title known) this is the Stremio splash: backdrop + title logo + spinner.
+// On every other page it stays the plain spinner.
+widget(container_z, {
+
+  widget(quad, {
+    color: [0.047, 0.043, 0.067];
+    hidden: isVoid($nav.currentpage.model.splashTitle);
+  });
+
+  widget(image, {
+    hidden: isVoid($nav.currentpage.model.backdrop);
+    source: $nav.currentpage.model.backdrop;
+    alpha: 0.35;
+  });
+
+  widget(container_y, {
+    space(1);
+
+    widget(image, {
+      hidden: isVoid($nav.currentpage.model.logo);
+      source: $nav.currentpage.model.logo;
+      height: 9em;
+      aspectConstraint: true;
+      align: center;
+    });
+
+    widget(label, {
+      autohide: true;
+      caption: select(isVoid($nav.currentpage.model.logo), $nav.currentpage.model.splashTitle, void);
+      align: center;
+      size: 3.5em;
+      bold: true;
+    });
+
+    widget(dummy, {
+      height: 1em;
+    });
+
+    widget(throbber, {
+    });
+
+    widget(container_y, {
+      weight: 1;
+      filterConstraintY: true;
+
+      align: center;
+
+      widget(label, {
+        align: center;
+        caption: $nav.currentpage.model.loadingStatus;
+        bold: true;
+      });
+
+      widget(container_x, {
+        spacing: 0.5em;
+        hidden: !$nav.currentpage.model.io.bitrateValid;
+
+        widget(label, {
+          filterConstraintX: true;
+          align: right;
+          color: 0.6;
+          caption: _("Bitrate:");
+        });
+
+        widget(label, {
+          filterConstraintX: true;
+          caption: fmt(_("%d kb/s"), $nav.currentpage.model.io.bitrate);
+        });
+      });
+
+      cloner($nav.currentpage.model.io.infoNodes, container_x, {
+        spacing: 0.5em;
+
+        widget(label, {
+          filterConstraintX: true;
+          align: right;
+          color: 0.6;
+          caption: $self.title + ":";
+        });
+
+        widget(label, {
+          filterConstraintX: true;
+          caption: $self.info;
+        });
+      });
+    });
+  });
+});

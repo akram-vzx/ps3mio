@@ -1,24 +1,18 @@
 # ps3mio
 
-Stremio لجهاز PS3، مع نسخة أندرويد للتجارب. التصميم ونتائج البحث في `docs/ARCHITECTURE.md`.
+Stremio على PS3 (وأندرويد للتجربة). التطبيق = محرك Movian (المشغل والتورنت والشبكة) فقط، أما الواجهة والإعدادات
+والصفحة الرئيسية فهي Stremio: سكن مخصص ومنطق Stremio مدمج في الملف التنفيذي. لا شيء من واجهة Movian أو إعداداته.
 
-## مسارا المشروع
-| المجلد | ما هو | يعمل على PS3؟ |
-|---|---|---|
-| `android/` | تطبيق Kotlin + ExoPlayer لتجربة الواجهة ومنطق Stremio وإعدادات المشغل على الهاتف | لا |
-| `engine/` | محرك Movian مع منطق Stremio مدمج (دون تثبيت إضافة)، يُبنى لأندرويد ولـ PS3 بنفس المشغل | نعم |
+## الملفات
+- `engine/skin/`: سكن ps3mio (شريط التنقل، Board، Discover، Library، صفحة العمل، شاشة التحميل بشعار العمل).
+- `engine/plugin/`: منطق Stremio (API، الـ addons، الإعدادات) المدمج في التطبيق.
+- `engine/ps3mio_patch.py`: يحوّل شجرة Movian إلى ps3mio (الصفحة الرئيسية = Stremio، حذف فحوص التحديث والإحصاءات، إصلاح تشغيل التورنت، إعدادات المشغل، دمج السكن والمنطق).
 
 ## البناء (تبويب Actions)
 | Workflow | الناتج | التشغيل |
 |---|---|---|
-| Android APK | `ps3mio.apk` (Kotlin) | تلقائي عند الرفع |
-| Engine - Android APK | `ps3mio-engine.apk` (نفس محرك PS3) | يدوي |
+| Engine - Android APK | `ps3mio-engine.apk` | تلقائي عند كل رفع يمس `engine/` |
 | Engine - PS3 PKG | `ps3mio.pkg` و `ps3mio_geohot.pkg` | يدوي |
 
-## حالة الشيفرة
-لم يُبنَ شيء من هذا على جهاز؛ المختبَر فقط: منطق إضافة Stremio (بمحاكاة Movian)، وأن تعديلات C تُترجم بدون أخطاء.
-تطبيق Kotlin لم يُترجم بعد. بناء المحرك طويل وقد يحتاج إصلاحات من السجل.
-
-## مجلدات إضافات خارجية (للتطوير دون إعادة بناء)
-أندرويد: `Download/ps3mio/` أو `Download/m7/`، وPS3: `/dev_usb000/ps3mio/` أو `/dev_hdd0/ps3mio/`.
-ضع فيها `stremio.zip` ليتقدم على النسخة المدمجة، ثم Settings > Plugins > Reload.
+## مجلدات للتطوير (اختياري)
+ضع `stremio.zip` في `Download/ps3mio/` (أندرويد) أو `/dev_usb000/ps3mio/` (PS3) ليتقدم على النسخة المدمجة.

@@ -1,0 +1,30 @@
+#import "skin://theme.view"
+
+// Poster card used in horizontal board rows
+widget(container_z, {
+  focusable: true;
+  onEvent(activate, navOpen($self.url, void, $self));
+
+  widget(quad, {
+    color: [0.48, 0.36, 0.96];
+    alpha: iir(isNavFocused() + isHovered(), 6);
+  });
+
+  widget(container_y, {
+    padding: [0.25em, 0.25em, 0.25em, 0.25em];
+
+    widget(image, {
+      source: $self.metadata.icon;
+      width: 9em;
+      height: 13.5em;
+    });
+
+    widget(label, {
+      caption: $self.metadata.title;
+      size: 1.1em;
+      ellipsize: true;
+      filterConstraintX: true;
+      alpha: 0.85;
+    });
+  });
+});

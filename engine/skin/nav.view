@@ -1,0 +1,56 @@
+// ps3mio - left navigation bar (Stremio webOS layout)
+
+#define StremioNavItem(LABEL, URL, ID) {
+  widget(container_z, {
+    focusable: true;
+    height: 3em;
+    onEvent(activate, navOpen(URL));
+
+    widget(quad, {
+      color: [0.48, 0.36, 0.96];
+      alpha: 0.85 * iir(isNavFocused() + isHovered(), 6) + 0.3 * ($self.model.metadata.nav == ID);
+    });
+
+    widget(label, {
+      caption: LABEL;
+      align: center;
+      size: 1.3em;
+    });
+  });
+  widget(dummy, {
+    height: 0.3em;
+  });
+}
+
+#define StremioNav() {
+  widget(container_z, {
+    width: 11em;
+
+    widget(quad, {
+      color: [0.075, 0.07, 0.1];
+    });
+
+    widget(container_y, {
+      padding: [0.6em, 1em, 0.6em, 1em];
+
+      widget(image, {
+        source: "skin://logo.png";
+        height: 4em;
+        aspectConstraint: true;
+        align: center;
+      });
+      widget(dummy, {
+        height: 1em;
+      });
+
+      StremioNavItem("Board", "stremio:start", "board");
+      StremioNavItem("Discover", "stremio:discover", "discover");
+      StremioNavItem("Library", "stremio:library", "library");
+      StremioNavItem("Search", "stremio:searchbox", "search");
+      StremioNavItem("Addons", "stremio:addons", "addons");
+      StremioNavItem("Settings", "stremio:settings", "settings");
+
+      space(1);
+    });
+  });
+}

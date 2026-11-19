@@ -1,0 +1,50 @@
+#import "skin://theme.view"
+
+// List row: optional thumbnail + title + description
+widget(container_z, {
+  focusable: true;
+  height: 4.2em;
+  onEvent(activate, navOpen($self.url, void, $self, $parent.model, void, $parent.url));
+
+  widget(quad, {
+    color: [0.082, 0.078, 0.106];
+  });
+
+  widget(quad, {
+    color: [0.48, 0.36, 0.96];
+    alpha: 0.85 * iir(isNavFocused() + isHovered(), 6);
+  });
+
+  widget(container_x, {
+    padding: [1em, 0.4em, 1em, 0.4em];
+
+    widget(image, {
+      autohide: true;
+      source: $self.metadata.icon;
+      width: 6em;
+      height: 3.4em;
+      margin: [0, 0, 1em, 0];
+    });
+
+    widget(container_y, {
+      filterConstraintX: true;
+      align: center;
+
+      widget(label, {
+        caption: $self.metadata.title;
+        size: 1.4em;
+        ellipsize: true;
+        filterConstraintX: true;
+      });
+
+      widget(label, {
+        autohide: true;
+        caption: $self.metadata.description;
+        size: 1.0em;
+        alpha: 0.6;
+        ellipsize: true;
+        filterConstraintX: true;
+      });
+    });
+  });
+});

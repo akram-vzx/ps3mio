@@ -1,0 +1,58 @@
+#import "skin://theme.view"
+#import "skin://styles/style_grid.view"
+#import "skin://nav.view"
+
+// Discover / Library: filter buttons + poster grid
+widget(container_x, {
+
+  StremioNav();
+
+  widget(container_z, {
+    filterConstraintX: true;
+
+    widget(array, {
+      id: "scrollable";
+      margin: [1em, 4.2em, 1em, 0];
+
+      Xspacing: 0.5em;
+      Yspacing: 0.5em;
+
+      childTilesX: select($ui.aspect > 1, 5, 2);
+      childTilesY: 4;
+      chaseFocus: true;
+      navWrap: true;
+
+      clipOffsetTop: 4em;
+      scrollThresholdTop: 5em;
+      scrollThresholdBottom: $ui.universeBottomHeight;
+      clipOffsetBottom: $ui.universeBottomHeight;
+
+      cloner($self.model.nodes, loader, {
+        noInitialTransform: true;
+        alt: "skin://items/rect/default.view";
+        source: "skin://items/rect/" + $self.type + ".view";
+      });
+    });
+    ScrollBar("scrollable", 4em, $ui.universeBottomHeight);
+
+    widget(container_y, {
+      align: top;
+
+      widget(list_x, {
+        height: 3.2em;
+        margin: [1em, 0.5em, 1em, 0.5em];
+
+        cloner($self.model.filters, loader, {
+          source: "skin://filterbtn.view";
+        });
+      });
+
+      widget(label, {
+        autohide: true;
+        caption: $self.model.metadata.notice;
+        size: 1.5em;
+        margin: [1em, 0.5em, 1em, 0];
+      });
+    });
+  });
+});

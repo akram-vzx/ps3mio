@@ -38,7 +38,9 @@ var custom = {
     torrent_note: 'Torrent (opens file list)',
     search_btn: 'Search...',
     refresh: 'Refresh',
-    recent: 'Recent searches'
+    recent: 'Recent searches',
+    Account: 'Account', Player: 'Player', Streaming: 'Streaming', Interface: 'Interface', Advanced: 'Advanced', Info: 'Info',
+    Type: 'Type', Catalog: 'Catalog'
   },
   ar: {
     hint: 'X اختيار   O رجوع   Triangle القائمة   Square خيارات   START تشغيل/ايقاف   L1/R1 تخطي',
