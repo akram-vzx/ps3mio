@@ -1,5 +1,6 @@
 // ps3mio - loading overlay.
-// While a video loads (title known) this is the Stremio splash: backdrop + title logo + spinner.
+// While a video loads this is the Stremio splash: backdrop + title logo shown at 40%,
+// and a 100% copy of the logo that is "wiped in" from left to right as the stream fills its buffer.
 // On every other page it stays the plain spinner.
 widget(container_z, {
 
@@ -11,79 +12,54 @@ widget(container_z, {
   widget(image, {
     hidden: isVoid($nav.currentpage.model.backdrop);
     source: $nav.currentpage.model.backdrop;
-    alpha: 0.35;
+    alpha: 0.3;
   });
 
   widget(container_y, {
     space(1);
 
-    widget(image, {
-      hidden: isVoid($nav.currentpage.model.logo);
-      source: $nav.currentpage.model.logo;
-      height: 9em;
-      aspectConstraint: true;
+    // logo (or the title as text) with the wipe overlay on top
+    widget(container_z, {
       align: center;
-    });
+      hidden: isVoid($nav.currentpage.model.splashTitle);
 
-    widget(label, {
-      autohide: true;
-      caption: select(isVoid($nav.currentpage.model.logo), $nav.currentpage.model.splashTitle, void);
-      align: center;
-      size: 3.5em;
-      bold: true;
+      widget(image, {
+        hidden: isVoid($nav.currentpage.model.logo);
+        source: $nav.currentpage.model.logo;
+        height: 9em;
+        aspectConstraint: true;
+      });
+
+      widget(label, {
+        autohide: true;
+        caption: select(isVoid($nav.currentpage.model.logo), $nav.currentpage.model.splashTitle, void);
+        align: center;
+        size: 3.5em;
+        bold: true;
+      });
+
+      // the part that is not loaded yet is covered by a veil in the background colour (-> 40%)
+      widget(container_x, {
+        widget(dummy, {
+          weight: 0.02 + 0.98 * select(isVoid($nav.currentpage.model.wipe), 0, $nav.currentpage.model.wipe);
+        });
+        widget(quad, {
+          weight: 0.98 - 0.98 * select(isVoid($nav.currentpage.model.wipe), 0, $nav.currentpage.model.wipe);
+          color: [0.047, 0.043, 0.067];
+          alpha: 0.6;
+        });
+      });
     });
 
     widget(dummy, {
       height: 1em;
     });
 
+    // plain spinner for every page except the video splash
     widget(throbber, {
+      hidden: !isVoid($nav.currentpage.model.splashTitle);
     });
 
-    widget(container_y, {
-      weight: 1;
-      filterConstraintY: true;
-
-      align: center;
-
-      widget(label, {
-        align: center;
-        caption: $nav.currentpage.model.loadingStatus;
-        bold: true;
-      });
-
-      widget(container_x, {
-        spacing: 0.5em;
-        hidden: !$nav.currentpage.model.io.bitrateValid;
-
-        widget(label, {
-          filterConstraintX: true;
-          align: right;
-          color: 0.6;
-          caption: _("Bitrate:");
-        });
-
-        widget(label, {
-          filterConstraintX: true;
-          caption: fmt(_("%d kb/s"), $nav.currentpage.model.io.bitrate);
-        });
-      });
-
-      cloner($nav.currentpage.model.io.infoNodes, container_x, {
-        spacing: 0.5em;
-
-        widget(label, {
-          filterConstraintX: true;
-          align: right;
-          color: 0.6;
-          caption: $self.title + ":";
-        });
-
-        widget(label, {
-          filterConstraintX: true;
-          caption: $self.info;
-        });
-      });
-    });
+    space(1);
   });
 });

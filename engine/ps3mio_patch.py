@@ -233,6 +233,7 @@ m7io_wait_files(torrent_t *to, int seconds)
   int i;
   if(!TAILQ_EMPTY(&to->to_files))
     return;
+  TRACE(TRACE_INFO, "ps3mio", "waiting for torrent metadata (up to %d s)", seconds);
   torrent_retain(to);
   for(i = 0; i < seconds * 5 && TAILQ_EMPTY(&to->to_files); i++) {
     hts_mutex_unlock(&bittorrent_mutex);
@@ -240,6 +241,10 @@ m7io_wait_files(torrent_t *to, int seconds)
     hts_mutex_lock(&bittorrent_mutex);
   }
   torrent_release(to);
+  if(TAILQ_EMPTY(&to->to_files))
+    TRACE(TRACE_ERROR, "ps3mio", "torrent metadata timeout - no peers answered");
+  else
+    TRACE(TRACE_INFO, "ps3mio", "torrent metadata ready after about %d s", i / 5);
 }
 
 static torrent_file_t *
@@ -277,7 +282,9 @@ m7io_pick_file(torrent_t *to, const char *url)
         return best;
     }
   }
-  return find_movie_torrent(to);
+  best = find_movie_torrent(to);
+  TRACE(TRACE_INFO, "ps3mio", "torrent file chosen: %s", best ? best->tf_fullpath : "(none)");
+  return best;
 }
 
 '''
@@ -382,7 +389,7 @@ if skin_dir:
         if v is not None and "splashTitle" not in v:
             old = "$self.model.loading = $self.media.loading;"
             if old in v:
-                v = v.replace(old, old + "\n$self.model.splashTitle = $self.media.metadata.title;\n$self.model.logo = $self.media.metadata.logo;\n$self.model.backdrop = $self.media.metadata.backdrop;", 1)
+                v = v.replace(old, old + "\n$self.model.splashTitle = $self.media.metadata.title;\n$self.model.logo = $self.media.metadata.logo;\n$self.model.backdrop = $self.media.metadata.backdrop;\n$self.model.wipe = select($self.media.buffer.limit > 0, select($self.media.buffer.current > $self.media.buffer.limit, 1, $self.media.buffer.current / $self.media.buffer.limit), 0);", 1)
                 wr("glwskins/flat/pages/video.view", v)
             else:
                 warn("video.view: loading assignment not found (no splash)")
@@ -390,5 +397,50 @@ if skin_dir:
         if bg is not None:
             bg = bg.replace("pixmap:gradient:30,30,30:10,10,10", "pixmap:gradient:16,14,24:8,7,12")
             wr("glwskins/flat/background.view", bg)
+
+# ---- 8. mirror the log to a folder the user can reach (Download/ps3mio/log.txt) -------
+s = rd("src/trace.c")
+if s is not None and "ps3mio_fd" not in s:
+    ok = True
+    if "static int log_fd;" not in s:
+        ok = False
+    m_write = re.search(r'write\(log_fd, "\\n", 1\) != 1\) \{\n\s*close\(log_fd\);\n\s*log_fd = -1;\n\s*\}\n', s)
+    m_init = re.search(r'log_start_ts = arch_get_ts\(\);\n', s)
+    if ok and m_write and m_init:
+        mirror = """      if(ps3mio_fd != -1) {
+        if(write(ps3mio_fd, buf3, strlen(buf3)) != (ssize_t)strlen(buf3) ||
+           write(ps3mio_fd, buf2, strlen(buf2)) != (ssize_t)strlen(buf2) ||
+           write(ps3mio_fd, s, strlen(s)) != (ssize_t)strlen(s) ||
+           write(ps3mio_fd, "\\n", 1) != 1) {
+          close(ps3mio_fd);
+          ps3mio_fd = -1;
+        }
+      }
+"""
+        s = s[:m_write.end()] + mirror + s[m_write.end():]
+        m_init = re.search(r'log_start_ts = arch_get_ts\(\);\n', s)
+        init = """#if defined(__ANDROID__) || defined(PS3)
+  {
+#if defined(__ANDROID__)
+    static const char *dirs[] = {"/storage/emulated/0/Download/ps3mio", "/sdcard/Download/ps3mio", NULL};
+#else
+    static const char *dirs[] = {"/dev_usb000/ps3mio", "/dev_hdd0/ps3mio", NULL};
+#endif
+    int di;
+    for(di = 0; dirs[di] != NULL && ps3mio_fd == -1; di++) {
+      char lp[PATH_MAX];
+      mkdir(dirs[di], 0777);
+      snprintf(lp, sizeof(lp), "%s/log.txt", dirs[di]);
+      ps3mio_fd = open(lp, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    }
+  }
+#endif
+"""
+        s = s[:m_init.end()] + init + s[m_init.end():]
+        s = s.replace("static int log_fd;", "static int log_fd;\nstatic int ps3mio_fd = -1;", 1)
+        wr("src/trace.c", s)
+        print("ok  trace.c: log mirrored to Download/ps3mio/log.txt (PS3: usb/hdd ps3mio/log.txt)")
+    else:
+        warn("trace.c: log markers not found (no log.txt mirror)")
 
 print("done, %d warning(s)" % len(problems))
