@@ -443,4 +443,260 @@ if s is not None and "ps3mio_fd" not in s:
     else:
         warn("trace.c: log markers not found (no log.txt mirror)")
 
+# ---- 9. WebVTT subtitles (Stremio addons serve .vtt) -> converted to SRT on load -------
+VTT_CONVERTER = r'''
+/* WebVTT -> SRT converter used by ps3mio (Stremio addons serve subtitles as WebVTT). */
+static int
+ps3mio_vtt_num(const char **pp, int *v, int *nd)
+{
+  const char *p = *pp;
+  int x = 0, d = 0;
+  while(*p >= '0' && *p <= '9') {
+    x = x * 10 + (*p - '0');
+    d++;
+    p++;
+  }
+  if(d == 0)
+    return -1;
+  *v = x;
+  *nd = d;
+  *pp = p;
+  return 0;
+}
+
+static int
+ps3mio_vtt_ts(const char **pp, int *h, int *m, int *s, int *ms)
+{
+  const char *p = *pp;
+  int a, b, c = 0, f = 0, da, db, dc, df;
+
+  while(*p == ' ' || *p == '\t')
+    p++;
+  if(ps3mio_vtt_num(&p, &a, &da) || *p != ':')
+    return -1;
+  p++;
+  if(ps3mio_vtt_num(&p, &b, &db))
+    return -1;
+  if(*p == ':') {
+    p++;
+    if(ps3mio_vtt_num(&p, &c, &dc))
+      return -1;
+    *h = a; *m = b; *s = c;
+  } else {
+    *h = 0; *m = a; *s = b;
+  }
+  if(*p != '.' && *p != ',')
+    return -1;
+  p++;
+  if(ps3mio_vtt_num(&p, &f, &df))
+    return -1;
+  while(df > 3) { f /= 10; df--; }
+  while(df < 3) { f *= 10; df++; }
+  *ms = f;
+  *pp = p;
+  return 0;
+}
+
+static size_t
+ps3mio_vtt_text(const char *in, size_t n, char *out)
+{
+  size_t i = 0, o = 0;
+  while(i < n) {
+    if(in[i] == '&') {
+      if(!strncmp(in + i, "&gt;", 4))   { out[o++] = '>'; i += 4; continue; }
+      if(!strncmp(in + i, "&lt;", 4))   { out[o++] = '<'; i += 4; continue; }
+      if(!strncmp(in + i, "&amp;", 5))  { out[o++] = '&'; i += 5; continue; }
+      if(!strncmp(in + i, "&quot;", 6)) { out[o++] = '"'; i += 6; continue; }
+      if(!strncmp(in + i, "&nbsp;", 6)) { out[o++] = ' '; i += 6; continue; }
+      if(!strncmp(in + i, "&lrm;", 5) || !strncmp(in + i, "&rlm;", 5)) { i += 5; continue; }
+    }
+    out[o++] = in[i++];
+  }
+  return o;
+}
+
+/* out must hold at least 2 * len + 64 bytes. Returns the number of bytes written. */
+static size_t
+ps3mio_vtt_convert(const char *in, size_t len, char *out)
+{
+  size_t p = 0, o = 0;
+  int idx = 0;
+
+  if(len >= 3 && !memcmp(in, "\xef\xbb\xbf", 3))
+    p = 3;
+  if(len - p < 6 || memcmp(in + p, "WEBVTT", 6))
+    return 0;
+  while(p < len && in[p] != '\n')           /* rest of the WEBVTT line */
+    p++;
+
+  while(p < len) {
+    /* collect one block: lines up to the next blank line */
+    size_t bstart, bend;
+    while(p < len && (in[p] == '\n' || in[p] == '\r'))
+      p++;
+    bstart = p;
+    for(;;) {
+      size_t ls = p, le;
+      while(p < len && in[p] != '\n')
+        p++;
+      le = p;
+      if(p < len)
+        p++;
+      while(le > ls && (in[le - 1] == '\r' || in[le - 1] == ' ' || in[le - 1] == '\t'))
+        le--;
+      if(le == ls || p >= len) {            /* blank line or end of data */
+        bend = (le == ls) ? ls : le;
+        break;
+      }
+    }
+    if(bend <= bstart)
+      continue;
+
+    {
+      const char *blk = in + bstart;
+      size_t bl = bend - bstart, q = 0;
+      int th = 0, tm = 0, ts = 0, tms = 0, eh = 0, em = 0, es = 0, ems = 0;
+      int found = 0;
+      size_t textstart = 0;
+
+      if(!strncmp(blk, "NOTE", 4) || !strncmp(blk, "STYLE", 5) || !strncmp(blk, "REGION", 6))
+        continue;
+
+      /* the timing line is the first or second line of the block */
+      while(q < bl && !found) {
+        size_t le = q;
+        const char *l = blk + q, *arrow;
+        while(le < bl && blk[le] != '\n')
+          le++;
+        arrow = NULL;
+        {
+          size_t k;
+          for(k = 0; k + 3 <= le - q; k++)
+            if(!memcmp(l + k, "-->", 3)) { arrow = l + k; break; }
+        }
+        if(arrow != NULL) {
+          const char *a = l, *b = arrow + 3;
+          if(!ps3mio_vtt_ts(&a, &th, &tm, &ts, &tms) &&
+             !ps3mio_vtt_ts(&b, &eh, &em, &es, &ems)) {
+            found = 1;
+            textstart = (le < bl) ? le + 1 : bl;
+          }
+        }
+        if(!found) {
+          if(q != 0)
+            break;                            /* only one identifier line allowed */
+          q = (le < bl) ? le + 1 : bl;
+        }
+      }
+      if(!found)
+        continue;
+
+      idx++;
+      o += sprintf(out + o, "%d\n%02d:%02d:%02d,%03d --> %02d:%02d:%02d,%03d\n",
+                   idx, th, tm, ts, tms, eh, em, es, ems);
+      {
+        size_t tp = textstart;
+        while(tp < bl) {
+          size_t le = tp;
+          while(le < bl && blk[le] != '\n')
+            le++;
+          {
+            size_t e2 = le;
+            while(e2 > tp && (blk[e2 - 1] == '\r' || blk[e2 - 1] == ' '))
+              e2--;
+            if(e2 > tp) {
+              o += ps3mio_vtt_text(blk + tp, e2 - tp, out + o);
+              out[o++] = '\n';
+            }
+          }
+          tp = le + 1;
+        }
+      }
+      out[o++] = '\n';
+    }
+  }
+  out[o] = 0;
+  return o;
+}
+
+static buf_t *
+ps3mio_vtt_to_srt(buf_t *b)
+{
+  buf_t *c = buf_create(b->b_size * 2 + 64);
+  size_t n;
+  if(c == NULL)
+    return NULL;
+  n = ps3mio_vtt_convert(buf_cstr(b), b->b_size, (char *)c->b_ptr);
+  if(n == 0) {
+    buf_release(c);
+    return NULL;
+  }
+  c->b_size = n;
+  ((char *)c->b_ptr)[n] = 0;
+  return c;
+}
+
+'''
+
+VTT_HOOK = """  /* ps3mio: Stremio addons serve WebVTT; convert it so the SRT parser accepts it */
+  if(b->b_size > 9 && (!memcmp(buf_cstr(b), "WEBVTT", 6) ||
+                       !memcmp(buf_cstr(b), "\\xef\\xbb\\xbfWEBVTT", 9))) {
+    buf_t *c = ps3mio_vtt_to_srt(b);
+    if(c != NULL) {
+      buf_release(b);
+      b = c;
+    }
+  }
+
+"""
+
+s = rd("src/subtitles/ext_subtitles.c")
+if s is not None and "ps3mio_vtt_convert" not in s:
+    m1 = re.search(r'ext_subtitles_t \*\s*\nsubtitles_load\(media_pipe_t \*mp, const char \*url\)', s)
+    m2 = re.search(r'  uint8_t header\[64\];\n  memcpy\(header, b->b_ptr, MIN\(b->b_size, 64\)\);', s)
+    if m1 and m2:
+        # insert hook first (later position), then the converter (earlier position)
+        s = s[:m2.start()] + VTT_HOOK + s[m2.start():]
+        start = s.rfind("/**", 0, m1.start())
+        if start < 0 or s[start:m1.start()].count("*/") != 1:
+            start = m1.start()
+        s = s[:start] + VTT_CONVERTER + "\n" + s[start:]
+        wr("src/subtitles/ext_subtitles.c", s)
+        print("ok  ext_subtitles.c: WebVTT -> SRT")
+    else:
+        warn("ext_subtitles.c: markers not found (WebVTT subtitles will be rejected)")
+
+# ---- 10. Android: MediaFormat.getInteger crashed when a key is missing (NullPointerException) ---
+jf = os.path.join(root, "src/arch/android/android_video_codec.c")
+if os.path.exists(jf):
+    s = rd("src/arch/android/android_video_codec.c")
+    if s is not None and "containsKey" not in s:
+        m = re.search(r'static int\s*\ngetInteger\(JNIEnv \*env, jobject obj, const char \*name\)\s*\n\{.*?\n\}\n', s, re.S)
+        if m:
+            fix = """static int
+getInteger(JNIEnv *env, jobject obj, const char *name)
+{
+  /* ps3mio: some devices omit keys such as "stride" -> MediaFormat.getInteger() threw a
+   * NullPointerException that killed the whole app. Check the key first, default to 0. */
+  jclass class = (*env)->GetObjectClass(env, obj);
+  jstring key = (*env)->NewStringUTF(env, name);
+  jmethodID has = (*env)->GetMethodID(env, class, "containsKey", "(Ljava/lang/String;)Z");
+  jmethodID get = (*env)->GetMethodID(env, class, "getInteger", "(Ljava/lang/String;)I");
+  int v = 0;
+  if(has != NULL && get != NULL &&
+     (*env)->CallBooleanMethod(env, obj, has, key))
+    v = (*env)->CallIntMethod(env, obj, get, key);
+  if((*env)->ExceptionCheck(env))
+    (*env)->ExceptionClear(env);
+  (*env)->DeleteLocalRef(env, key);
+  (*env)->DeleteLocalRef(env, class);
+  return v;
+}
+"""
+            s = s[:m.start()] + fix + s[m.end():]
+            wr("src/arch/android/android_video_codec.c", s)
+            print("ok  android_video_codec.c: getInteger no longer crashes on missing keys")
+        else:
+            warn("android_video_codec.c: getInteger not found (video decoder may crash on some devices)")
+
 print("done, %d warning(s)" % len(problems))

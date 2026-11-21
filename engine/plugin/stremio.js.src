@@ -740,6 +740,7 @@
           return { title: clean(x.lang || 'sub'), url: x.url, language: x.lang, source: 'stream' };
         }) : []).concat(subs),
         no_fs_scan: 1,
+        no_subtitle_scan: 1,
         ps3mio: { seekBack: cfg.seekBack, seekFwd: cfg.seekFwd, resume: cfg.resume }
       };
       if (m0 && m0.logo) vp.logo = img(m0.logo);
