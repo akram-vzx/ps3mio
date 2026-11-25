@@ -1189,4 +1189,81 @@ if s is not None and "ps3mio" not in s:
     else:
         warn("media_event.c: play/pause marker not found (cannot interrupt buffering)")
 
+# ---- 14. diagnostics for log.txt (rate limited): buffering state and A/V clock ---------------
+s = rd("src/media/media.c")
+if s is not None and "M7BUF-trace" not in s:
+    old = """  mp->mp_hold_flags |= MP_HOLD_PRE_BUFFERING;
+  mp_set_playstatus_by_hold_locked(mp, "Buffering");
+}"""
+    if old in s:
+        s = s.replace(old, """  /* M7BUF-trace */
+  TRACE(TRACE_DEBUG, "BUFFER", "Pre-buffering: waiting for data (queued %u bytes, %d ms)",
+        mp->mp_buffer_current, (int)(mp->mp_buffer_delay / 1000));
+  mp->mp_hold_flags |= MP_HOLD_PRE_BUFFERING;
+  mp_set_playstatus_by_hold_locked(mp, "Buffering");
+}""", 1)
+        wr("src/media/media.c", s)
+        print("ok  media.c: buffering trace")
+    else:
+        warn("media.c: mp_underrun body not found (no buffering trace)")
+
+s = rd("src/media/media_queue.c")
+if s is not None and "M7BUF-trace" not in s:
+    if '#include "media.h"\n' in s and "mp->mp_buffer_current * 4 > mp->mp_buffer_limit * 3) {\n" in s:
+        s = s.replace('#include "media.h"\n', '#include "media.h"\n#include "main.h"\n', 1)
+        s = s.replace("mp->mp_buffer_current * 4 > mp->mp_buffer_limit * 3) {\n",
+                      "mp->mp_buffer_current * 4 > mp->mp_buffer_limit * 3) {\n"
+                      "      /* M7BUF-trace */\n"
+                      "      TRACE(TRACE_DEBUG, \"BUFFER\", \"Pre-buffering done: %d ms queued, %u of %u bytes\",\n"
+                      "            (int)(mp->mp_buffer_delay / 1000), mp->mp_buffer_current, mp->mp_buffer_limit);\n", 1)
+        wr("src/media/media_queue.c", s)
+        print("ok  media_queue.c: buffering-done trace")
+    else:
+        warn("media_queue.c: trace marker not found")
+
+s = rd("src/arch/android/android_video_codec.c")
+if s is not None and "M7SYNC" not in s:
+    old = "    int64_t wt =  fi.fi_pts + rtd;\n    static int64_t ptsdelta;\n"
+    if old in s:
+        s = s.replace(old, old + """
+    {
+      /* M7SYNC: one line per 16 frames - pts step vs wall-clock step shows a fast-forward */
+      static int m7n, m7skipped;
+      static int64_t m7pts, m7now;
+      if(skip || epoch != fi.fi_epoch || (wt - now) <= 10000LL)
+        m7skipped++;
+      if((++m7n & 15) == 1) {
+        TRACE(TRACE_DEBUG, "M7SYNC",
+              "n=%d dropped=%d pts=%lld dpts=%lld dnow=%lld lead=%lld rtd=%lld epoch=%d/%d",
+              m7n, m7skipped, (long long)fi.fi_pts, (long long)(fi.fi_pts - m7pts),
+              (long long)(now - m7now), (long long)(wt - now), (long long)rtd,
+              epoch, fi.fi_epoch);
+        m7pts = fi.fi_pts;
+        m7now = now;
+      }
+    }
+""", 1)
+        wr("src/arch/android/android_video_codec.c", s)
+        print("ok  android_video_codec.c: M7SYNC trace")
+    else:
+        warn("android_video_codec.c: schedule marker not found (no M7SYNC trace)")
+
+s = rd("src/arch/android/android_audio.c")
+if s is not None and "M7CLOCK" not in s:
+    old = "  d->ad.ad_delay = audio_delay_samples * 1000000LL / d->ad.ad_out_sample_rate;\n"
+    if old in s:
+        s = s.replace(old, old + """  {
+    /* M7CLOCK: audio position / delay every 20 callbacks */
+    static int m7c;
+    if((++m7c % 20) == 1)
+      TRACE(TRACE_DEBUG, "M7CLOCK", "pos=%ums sent=%lld delay=%lldus rtd=%lld",
+            (unsigned)ms, (long long)d->d_samples_sent, (long long)d->ad.ad_delay,
+            (long long)mp->mp_realtime_delta);
+  }
+""", 1)
+        wr("src/arch/android/android_audio.c", s)
+        print("ok  android_audio.c: M7CLOCK trace")
+    else:
+        warn("android_audio.c: delay marker not found (no M7CLOCK trace)")
+
 print("done, %d warning(s)" % len(problems))

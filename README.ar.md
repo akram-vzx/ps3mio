@@ -16,7 +16,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/akram-vzx/ps3mio">
+  <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio">
     <img src="docs/images/logo.png" alt="ps3mio logo" width="200" height="200">
   </a>
 
@@ -26,11 +26,11 @@
     Stremio على PlayStation 3 (وعلى أندرويد للتجربة).
     <br />
     <br />
-    <a href="https://github.com/akram-vzx/ps3mio/actions">البناءات</a>
+    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/actions">البناءات</a>
     &middot;
-    <a href="https://github.com/akram-vzx/ps3mio/issues">الإبلاغ عن خطأ</a>
+    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues">الإبلاغ عن خطأ</a>
     &middot;
-    <a href="https://github.com/akram-vzx/ps3mio/issues">طلب ميزة</a>
+    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues">طلب ميزة</a>
   </p>
 </div>
 
@@ -93,11 +93,11 @@
 
 </div>
 
-<a href="https://star-history.com/#akram-vzx/ps3mio&Date">
+<a href="https://star-history.com/#YOUR_GITHUB_USERNAME/ps3mio&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date" />
   </picture>
 </a>
 
@@ -118,10 +118,10 @@ ps3mio مبني على Movian الموزَّع برخصة GPL-3.0. راجع مس
 
 </div>
 
-[forks-shield]: https://img.shields.io/github/forks/akram-vzx/ps3mio.svg?style=for-the-badge
-[forks-url]: https://github.com/akram-vzx/ps3mio/network/members
-[stars-shield]: https://img.shields.io/github/stars/akram-vzx/ps3mio.svg?style=for-the-badge
-[stars-url]: https://github.com/akram-vzx/ps3mio/stargazers
-[issues-shield]: https://img.shields.io/github/issues/akram-vzx/ps3mio.svg?style=for-the-badge
-[issues-url]: https://github.com/akram-vzx/ps3mio/issues
+[forks-shield]: https://img.shields.io/github/forks/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
+[forks-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/network/members
+[stars-shield]: https://img.shields.io/github/stars/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
+[stars-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/stargazers
+[issues-shield]: https://img.shields.io/github/issues/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
+[issues-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues
 [product-screenshot]: docs/images/screenshot.png
