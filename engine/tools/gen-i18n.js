@@ -3,8 +3,8 @@
 // usage: node tools/gen-i18n.js <path-to-stremio-translations> > i18n.json
 var fs = require('fs'), path = require('path');
 var dir = process.argv[2] || '../stremio-translations-master';
-var langs = { en: 'en-US', ar: 'ar-AR', fr: 'fr-FR', es: 'es-ES', de: 'de-DE',
-              it: 'it-IT', pt: 'pt-BR', tr: 'tr-TR' };
+// The interface is English only (Arabic / English are used for subtitles, not for the UI).
+var langs = { en: 'en-US' };
 // internal key -> official translation key
 var map = {
   board: 'Board', discover: 'Discover', library: 'Library', addons: 'ADDONS',
@@ -39,32 +39,8 @@ var custom = {
     search_btn: 'Search...',
     refresh: 'Refresh',
     recent: 'Recent searches',
-    Account: 'Account', Player: 'Player', Streaming: 'Streaming', Interface: 'Interface', Advanced: 'Advanced', Info: 'Info',
+    Account: 'Account', Player: 'Player', Streaming: 'Streaming', Interface: 'Interface', Advanced: 'Advanced', Info: 'Info', 'Buttons info': 'Buttons info',
     Type: 'Type', Catalog: 'Catalog'
-  },
-  ar: {
-    hint: 'X اختيار   O رجوع   Triangle القائمة   Square خيارات   START تشغيل/ايقاف   L1/R1 تخطي',
-    player_hint: 'X ايقاف مؤقت   L1/R1 تخطي   يمين/يسار تقديم   Triangle القائمة   Square معلومات',
-    phone_login: 'تسجيل الدخول بالهاتف / الكمبيوتر (رمز ربط)',
-    email_login: 'تسجيل الدخول بالبريد وكلمة المرور',
-    sync: 'مزامنة الإضافات من حسابي',
-    synced: 'تمت مزامنة الإضافات',
-    need_login: 'سجّل الدخول أولاً',
-    link_1: 'افتح هذا الرابط على هاتفك أو الكمبيوتر:',
-    link_2: 'وأدخل هذا الرمز:',
-    link_wait: 'بانتظار الموافقة...',
-    link_fail: 'تعذر الوصول لخدمة الربط (تحقق من الشبكة / وسيط HTTPS)',
-    no_results: 'لا نتائج',
-    no_streams: 'لا توجد روابط تشغيل',
-    addons_help: 'تتم إدارة الإضافات من الهاتف أو الكمبيوتر (تطبيق Stremio > الإضافات). اضغط مزامنة هنا لتحديث القائمة.',
-    net_error: 'خطأ في الشبكة',
-    not_logged: 'غير مسجل - يتم استخدام إضافة Cinemeta الافتراضية',
-    logged_ok: 'تم تسجيل الدخول',
-    logged_out: 'تم تسجيل الخروج',
-    torrent_note: 'تورنت (يفتح قائمة الملفات)',
-    search_btn: 'بحث...',
-    refresh: 'تحديث',
-    recent: 'عمليات البحث الأخيرة'
   }
 };
 var out = {};

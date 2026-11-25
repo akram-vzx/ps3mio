@@ -75,7 +75,7 @@ var db = {
     { id: 'tt2:1:2', season: 1, episode: 2, title: 'Two' }, { id: 'tt2:0:1', season: 0, episode: 1, title: 'Special' } ] } },
   'https://torrentio.example/cfg/stream/movie/tt1.json': { streams: [
     { name: 'Torrentio\n4k', title: 'Heat.2160p.mkv\n\uD83D\uDC64 55 \uD83D\uDCBE 12 GB \u2699\uFE0F ThePirateBay', infoHash: 'abcdef0123456789abcdef0123456789abcdef01', fileIdx: 2, sources: ['tracker:udp://t1:80', 'dht:abc'] },
-    { name: 'DirectHTTP', title: 'file', url: 'https://cdn.example/heat.mp4', subtitles: [{ lang: 'eng', url: 'https://s/x.srt' }] },
+    { name: 'DirectHTTP', title: 'file', url: 'https://cdn.example/heat.mp4', subtitles: [{ lang: 'eng', url: 'https://s/x.srt' }, { lang: 'ara', url: 'https://s/a.srt' }] },
     { name: 'YT', ytId: 'abc' } ] },
   'https://torrentio.example/cfg/stream/series/tt2:1:1.json': { streams: [{ name: 'T', url: 'https://cdn/e1.mkv' }, { name: 'Pack\n1080p', title: 'Show.Season.1.Pack\n\uD83D\uDC64 9 \uD83D\uDCBE 30 GB', infoHash: '1111111111111111111111111111111111111111' }] },
   'https://subs.example/subtitles/movie/tt1.json': { subtitles: [{ id: 1, lang: 'ara', url: 'https://s/a.srt' }, { id: 2, lang: 'eng', url: 'https://s/e.srt' }] },
@@ -180,12 +180,25 @@ var ep = open('stremio:season:series:tt2:1');
 assert(ep.items.filter(function (i) { return /stremio:streams:series:tt2%3A1%3A1:/.test(i.url || ''); }).length === 1, 'episode entries use video id');
 
 // --- streams (direct-to-player + logo/backdrop/settings for the player)
+function codecCheck(str) {
+  var r = [['x265', /(x\.?265|h\.?265|hevc)/i], ['x264', /(x\.?264|h\.?264|avc)/i]];
+  for (var i = 0; i < r.length; i++) if (r[i][1].test(str)) return r[i][0];
+  return '';
+}
 var st1 = open('stremio:streams:movie:tt1:Heat');
 var vids = st1.items.filter(function (i) { return /^videoparams:/.test(i.url || ''); });
 assert(vids.length === 2 && vids[0].type === 'video', 'torrent + direct streams are video items');
 var vpT = JSON.parse(vids[0].url.substr(12));
 assert(/^torrent:video:magnet:\?xt=urn:btih:abcdef/.test(vpT.sources[0].url) && /m7idx=2/.test(vpT.sources[0].url), 'torrent source with fileIdx');
-assert(vids[0].md.title === '[4k] Seeds 55 | 12 GB | ThePirateBay - Heat.2160p.mkv', 'row shows quality/seeds/size/source/file');
+assert(vids[0].md.title === '[4k] Heat.2160p.mkv', 'row title is quality + file name only');
+assert(vids[0].md.description === 'Seeds 55   |   12 GB', 'line under the title: seeders | size (no codec in this name)');
+assert(codecCheck('Movie.2020.1080p.BluRay.x265-GRP.mkv') === 'x265' && codecCheck('Movie.H.264.mp4') === 'x264' && codecCheck('Movie.HEVC.mkv') === 'x265' && codecCheck('plain.mkv') === '', 'codec detection');
+assert(vids[0].md.title.indexOf('Seeds') < 0, 'title no longer repeats the seeders line');
+var subUrls = JSON.parse(vids[1].url.substr(12)).subtitles.map(function (x) { return x.url; });
+assert(subUrls.indexOf('https://s/a.srt') >= 0 && subUrls.length === subUrls.filter(function (u, i) { return subUrls.indexOf(u) === i; }).length, 'subtitle URLs are unique');
+var setPg = open('stremio:settings');
+assert(!setPg.items.some(function (i) { return i.md && /Language/.test(i.md.title || ''); }), 'no interface language option');
+assert(setPg.items.some(function (i) { return i.passive && i.md.title === 'Buttons info'; }), 'buttons info section in settings');
 assert(vpT.subtitles.length === 2, 'subtitles passed to the player');
 assert(vpT.logo === 'https://img/logo.png' && vpT.backdrop === 'https://img/bg.jpg', 'logo + backdrop passed for the loading screen');
 assert(vpT.ps3mio.seekBack === 15 && vpT.ps3mio.seekFwd === 30 && vpT.ps3mio.resume === 1, 'player settings passed');

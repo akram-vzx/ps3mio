@@ -38,9 +38,19 @@
     { section: 'Player', key: 'seekFwd', title: 'Seek forward step', def: '30', opts: SEEKS },
     { section: 'Player', key: 'resume', title: 'Resume playback', def: '1', opts: [['1', 'Always'], ['2', 'Ask'], ['0', 'Never']] },
     { section: 'Streaming', key: 'maxStreams', title: 'Streams shown per addon', def: '60', opts: [['20', '20'], ['40', '40'], ['60', '60'], ['100', '100']] },
-    { section: 'Interface', key: 'lang', title: 'Language', def: 'en', opts: [['en', 'English'], ['ar', 'Arabic'], ['fr', 'Francais'], ['es', 'Espanol'], ['de', 'Deutsch'], ['it', 'Italiano'], ['pt', 'Portugues'], ['tr', 'Turkce']] },
     { section: 'Advanced', key: 'relay', title: 'HTTP relay prefix (only if HTTPS fails)', def: '', text: true },
     { section: 'Advanced', key: 'manual', title: 'Extra addon manifest URLs', def: '', text: true }
+  ];
+
+  // Settings > Buttons info (PS3 pad; on the phone test build the same actions use touch / the on-screen text)
+  var BUTTONS = [
+    ['X', 'Select / open'],
+    ['O', 'Back'],
+    ['Triangle', 'Menu'],
+    ['Square', 'Options / info'],
+    ['START', 'Play / pause'],
+    ['L1 / R1', 'Skip'],
+    ['Left / Right', 'Seek (steps set in Player settings)']
   ];
 
   function settingOf(key) {
@@ -57,7 +67,7 @@
     if (key === 'manual') _addons = null;
   }
   var cfg = { api: 'https://api.strem.io', link: 'https://link.stremio.com' };
-  ['lang', 'relay', 'manual'].forEach(function (k) {
+  ['relay', 'manual'].forEach(function (k) {
     Object.defineProperty(cfg, k, { get: function () { return cfgGet(k); } });
   });
   ['maxStreams', 'seekBack', 'seekFwd', 'resume'].forEach(function (k) {
@@ -73,9 +83,8 @@
   var metaCacheKeys = [];
 
   function T(k) {
-    var d = I18N[cfg.lang] || I18N.en || {};
-    if (d[k]) return d[k];
-    return (I18N.en && I18N.en[k]) || k;
+    var d = I18N.en || {};
+    return d[k] || k;
   }
 
   function clean(s) {
@@ -372,6 +381,15 @@
     return Math.round(b / 1024) + ' KB';
   }
 
+  function codecOf(str) {
+    str = String(str || '');
+    if (/(x\.?265|h\.?265|hevc)/i.test(str)) return 'x265';
+    if (/(x\.?264|h\.?264|avc)/i.test(str)) return 'x264';
+    if (/\bav1\b/i.test(str)) return 'AV1';
+    return '';
+  }
+
+  // Row layout: title = release / file name, line under it = Seeds | Size | codec
   function streamRow(a, s) {
     var nameLines = clean(mapEmoji(s.name || a.m.name)).split(/[\r\n]+/);
     var qual = nameLines.slice(1).join(' ');
@@ -379,21 +397,18 @@
     var bh = s.behaviorHints || {};
     var seedM = /Seeds\s*(\d+)/i.exec(text);
     var sizeM = /Size\s*([\d.,]+\s*[KMGT]i?B)/i.exec(text);
-    var srcM = /Src\s*([^\r\n]+)/i.exec(text);
     var seeders = seedM ? parseInt(seedM[1], 10) : ((s.seeders !== undefined && s.seeders !== null) ? parseInt(s.seeders, 10) : null);
     var size = sizeM ? sizeM[1] : fmtSize(bh.videoSize);
-    var src = srcM ? clean(srcM[1]) : '';
     var fname = clean(bh.filename || text.split(/[\r\n]+/)[0] || '');
-    if (/^(Seeds|Size|Src)\b/i.test(fname)) fname = '';
-    if (fname.length > 64) fname = fname.substr(0, 61) + '...';
+    if (/^(Seeds|Peers|Size|Src)\b/i.test(fname)) fname = '';
+    if (fname.length > 110) fname = fname.substr(0, 107) + '...';
+    var codec = codecOf(fname + ' ' + text + ' ' + nameLines.join(' '));
     var info = [];
     if (seeders !== null && !isNaN(seeders)) info.push('Seeds ' + seeders);
     if (size) info.push(size);
-    if (src) info.push(src);
-    var title = (qual ? '[' + qual + '] ' : '') + info.join(' | ');
-    if (fname) title += (title ? ' - ' : '') + fname;
-    if (!title) title = oneLine(nameLines[0] || a.m.name);
-    return { title: title, description: text, seeders: seeders, size: size };
+    if (codec) info.push(codec);
+    var title = (qual ? '[' + qual + '] ' : '') + (fname || oneLine(nameLines[0] || a.m.name));
+    return { title: title, description: info.join('   |   '), seeders: seeders, size: size, codec: codec };
   }
 
   function gatherSubs(type, id) {
@@ -408,7 +423,19 @@
                    url: x.url, language: x.lang, source: clean(a.m.name) });
       });
     });
-    return out.slice(0, 24);
+    return dedupeSubs(out).slice(0, 24);
+  }
+
+  // The same subtitle URL can arrive from two addons (or from the stream itself). Movian identifies
+  // a track by its URL, so duplicates made the menu show two entries selected at once.
+  function dedupeSubs(list) {
+    var seen = {}, out = [];
+    list.forEach(function (x) {
+      if (!x || !x.url || seen[x.url]) return;
+      seen[x.url] = 1;
+      out.push(x);
+    });
+    return out;
   }
 
   function seasonEpisodeOf(id) {
@@ -736,9 +763,9 @@
         title: clean(title),
         canonicalUrl: url,
         sources: [{ url: url }],
-        subtitles: (s.subtitles && s.subtitles.length ? s.subtitles.map(function (x) {
+        subtitles: dedupeSubs((s.subtitles && s.subtitles.length ? s.subtitles.map(function (x) {
           return { title: clean(x.lang || 'sub'), url: x.url, language: x.lang, source: 'stream' };
-        }) : []).concat(subs),
+        }) : []).concat(subs)),
         no_fs_scan: 1,
         no_subtitle_scan: 1,
         ps3mio: { seekBack: cfg.seekBack, seekFwd: cfg.seekFwd, resume: cfg.resume }
@@ -825,6 +852,10 @@
         pg.appendPassiveItem('separator', '', { title: T(sec) });
       }
       pg.appendItem(PFX + 'cfg:' + s.key, 'directory', { title: T(s.title) + ':   ' + valueLabel(s) });
+    });
+    pg.appendPassiveItem('separator', '', { title: T('Buttons info') });
+    BUTTONS.forEach(function (b) {
+      pg.appendItem(PFX + 'settings', 'directory', { title: b[0], description: b[1] });
     });
     pg.appendPassiveItem('separator', '', { title: T('Info') });
     pg.appendItem(PFX + 'settings', 'directory', { title: 'ps3mio ' + VERSION + '  -  Stremio client' });
