@@ -124,7 +124,7 @@ See the [open issues](https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues) for
 <!-- STAR HISTORY -->
 ## Star History
 
-<a href="https://star-history.com/#YOUR_GITHUB_USERNAME/ps3mio&Date">
+<a href="https://star-history.com/akram-vzx/ps3mio&Date">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date&theme=dark" />
     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date" />
