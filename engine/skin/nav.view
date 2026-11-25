@@ -13,8 +13,9 @@
 
     widget(label, {
       caption: LABEL;
+      font: "dataroot://res/fonts/ps3mio/title.ttf";
       align: center;
-      size: 1.3em;
+      size: 1.4em;
     });
   });
   widget(dummy, {

@@ -1266,4 +1266,56 @@ if s is not None and "M7CLOCK" not in s:
     else:
         warn("android_audio.c: delay marker not found (no M7CLOCK trace)")
 
+# ---- 15. UI font: the Arabic + English text font everywhere in the flat skin ----------------
+FONT_URL = "dataroot://res/fonts/ps3mio/text.ttf"
+flatdir = os.path.join(root, "glwskins", "flat")
+if fonts_dir and os.path.isdir(fonts_dir) and os.path.isdir(flatdir):
+    pat = re.compile(r'skin://fonts/RobotoCondensed-(Regular|Light|Bold)\.ttf')
+    changed = 0
+    for dp, dn, fn in os.walk(flatdir):
+        for f in fn:
+            if f.endswith(".view"):
+                fp = os.path.join(dp, f)
+                with open(fp, encoding="utf-8") as fh:
+                    t = fh.read()
+                t2 = pat.sub(FONT_URL, t)
+                if t2 != t:
+                    with open(fp, "w", encoding="utf-8") as fh:
+                        fh.write(t2)
+                    changed += 1
+    print("ok  skin: text font set in %d view files" % changed)
+else:
+    warn("skin fonts: fonts folder or glwskins/flat missing (UI keeps its default font)")
+
+# ---- 16. Android: do not let the decoder run ahead of the audio clock -------------------------
+# SurfaceFlinger presents a frame immediately when its release time is more than ~1 s in the
+# future. A decoder that got ahead (frames dropped while the audio clock starts) then ran away at
+# 3-4x speed, because every later frame was "too far ahead" and was shown at once.
+s = rd("src/arch/android/android_video_codec.c")
+if s is not None and "M7LEAD" not in s:
+    old = "    int64_t wt =  fi.fi_pts + rtd;\n    static int64_t ptsdelta;\n"
+    if old in s:
+        s = s.replace(old, old + """
+    /* M7LEAD: hold a frame back until it is due within 0.6 s of now */
+    if(epoch == fi.fi_epoch && !skip && (wt - now) > 600000LL) {
+      int m7w = 0;
+      while((wt - now) > 600000LL && m7w++ < 400 &&
+            TAILQ_FIRST(&mp->mp_video.mq_q_ctrl) == NULL && mp->mp_hold_flags == 0) {
+        usleep(10000);
+        now = arch_get_avtime();
+        hts_mutex_lock(&mp->mp_clock_mutex);
+        rtd = mp->mp_realtime_delta + mp->mp_avdelta;
+        epoch = mp->mp_audio_clock_epoch;
+        hts_mutex_unlock(&mp->mp_clock_mutex);
+        wt = fi.fi_pts + rtd;
+        if(epoch != fi.fi_epoch)
+          break;
+      }
+    }
+""", 1)
+        wr("src/arch/android/android_video_codec.c", s)
+        print("ok  android_video_codec.c: frames held back when more than 0.6 s early (x2 speed fix)")
+    else:
+        warn("android_video_codec.c: schedule marker not found (x2 speed fix not applied)")
+
 print("done, %d warning(s)" % len(problems))

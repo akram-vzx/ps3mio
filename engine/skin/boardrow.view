@@ -5,7 +5,8 @@ widget(container_y, {
 
   widget(label, {
     caption: $self.title;
-    size: 1.8em;
+    font: "dataroot://res/fonts/ps3mio/title.ttf";
+    size: 1.9em;
     margin: [1em, 1em, 0, 0.3em];
   });
 

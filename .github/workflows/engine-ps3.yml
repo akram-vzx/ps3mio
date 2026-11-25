@@ -1,8 +1,17 @@
 # Engine track: PS3 PKG built from Cruslan/PS3-Movian-Next (modern PSL1GHT v2 + FFmpeg)
 # with the ps3mio patch + built-in Stremio plugin. Same engine/player as the Android engine build.
-# Manual run. Very long (FFmpeg is compiled for the Cell CPU).
+# Very long (FFmpeg is compiled for the Cell CPU).
+# Runs on every push that touches engine/ (or manually). The PKG files are published as a GitHub
+# Release named by engine/RELEASE (for example v1.0). A release that already exists is left alone:
+# edit engine/RELEASE (v1.1, ...) to publish a new one.
 name: Engine - PS3 PKG
-on: workflow_dispatch
+on:
+  push:
+    branches: [main, master]
+    paths: ['engine/**', '.github/workflows/engine-ps3.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   ps3:
     runs-on: ubuntu-22.04
@@ -50,3 +59,19 @@ jobs:
         with:
           name: ps3mio-engine-ps3
           path: out
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG=$(tr -d ' \r\n' < engine/RELEASE)
+          test -f out/ps3mio.pkg || { echo "ps3mio.pkg was not built"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - edit engine/RELEASE to publish a new one."
+          else
+            FILES="out/ps3mio.pkg"
+            test -f out/ps3mio_geohot.pkg && FILES="$FILES out/ps3mio_geohot.pkg"
+            gh release create "$TAG" $FILES \
+              --target "$GITHUB_SHA" --title "ps3mio $TAG" --notes-file engine/RELEASE_NOTES.md
+          fi

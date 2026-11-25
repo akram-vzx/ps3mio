@@ -17,8 +17,8 @@ widget(container_x, {
       Xspacing: 0.5em;
       Yspacing: 0.5em;
 
-      childTilesX: select($ui.aspect > 1, 5, 2);
-      childTilesY: 4;
+      childTilesX: select($ui.aspect > 1, 6, 3);
+      childTilesY: select($ui.aspect > 1, 2, 3);
       chaseFocus: true;
       navWrap: true;
 
@@ -29,8 +29,7 @@ widget(container_x, {
 
       cloner($self.model.nodes, loader, {
         noInitialTransform: true;
-        alt: "skin://items/rect/default.view";
-        source: "skin://items/rect/" + $self.type + ".view";
+        source: "skin://items/p/default.view";
       });
     });
     ScrollBar("scrollable", 4em, $ui.universeBottomHeight);
@@ -50,6 +49,7 @@ widget(container_x, {
       widget(label, {
         autohide: true;
         caption: $self.model.metadata.notice;
+        font: "dataroot://res/fonts/ps3mio/title.ttf";
         size: 1.5em;
         margin: [1em, 0.5em, 1em, 0];
       });

@@ -18,7 +18,8 @@ widget(container_x, {
 
       widget(label, {
         caption: $self.model.metadata.title;
-        size: 2.2em;
+        font: "dataroot://res/fonts/ps3mio/title.ttf";
+        size: 2.3em;
         ellipsize: true;
         margin: [0.5em, 0.8em, 0, 0.6em];
       });

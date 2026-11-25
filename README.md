@@ -16,7 +16,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio">
+  <a href="https://github.com/akram-vzx/ps3mio">
     <img src="docs/images/logo.png" alt="ps3mio logo" width="200" height="200">
   </a>
 
@@ -26,11 +26,11 @@
     Stremio for the PlayStation 3 (and Android, for testing).
     <br />
     <br />
-    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/actions">Builds</a>
+    <a href="https://github.com/akram-vzx/ps3mio/actions">Builds</a>
     &middot;
-    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues">Report Bug</a>
+    <a href="https://github.com/akram-vzx/ps3mio/issues">Report Bug</a>
     &middot;
-    <a href="https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues">Request Feature</a>
+    <a href="https://github.com/akram-vzx/ps3mio/issues">Request Feature</a>
   </p>
 </div>
 
@@ -87,12 +87,12 @@ as one project.
 
 ### Builds
 
-Builds run from the **Actions** tab of the repository.
+The PS3 packages are published under **Releases**. The Android APK is not a release: it is an artifact of the Android workflow in the **Actions** tab.
 
 | Workflow | Output | When it runs |
 |---|---|---|
 | Engine - Android APK | `ps3mio-engine.apk` | Automatically on every push that touches `engine/` |
-| Engine - PS3 PKG | `ps3mio.pkg` and `ps3mio_geohot.pkg` | Manually |
+| Engine - PS3 PKG | `ps3mio.pkg` and `ps3mio_geohot.pkg`, published as a [Release](https://github.com/akram-vzx/ps3mio/releases) named in `engine/RELEASE` | Automatically on every push that touches `engine/` (a release that already exists is left alone) |
 
 The Android build is the same engine, player and interface as the PS3 build, so it is used to test changes quickly.
 
@@ -117,18 +117,18 @@ The Android build is the same engine, player and interface as the PS3 build, so 
 - [ ] Subtitle settings (size and colors) inside the Stremio settings page
 - [ ] Testing on a real PS3
 
-See the [open issues](https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues) for known problems.
+See the [open issues](https://github.com/akram-vzx/ps3mio/issues) for known problems.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- STAR HISTORY -->
 ## Star History
 
-<a href="https://star-history.com/#YOUR_GITHUB_USERNAME/ps3mio&Date">
+<a href="https://star-history.com/#akram-vzx/ps3mio&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=YOUR_GITHUB_USERNAME/ps3mio&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=akram-vzx/ps3mio&type=Date" />
   </picture>
 </a>
 
@@ -152,12 +152,12 @@ ps3mio is built on Movian, which is distributed under the GPL-3.0 license. See t
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[forks-shield]: https://img.shields.io/github/forks/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
-[forks-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/network/members
-[stars-shield]: https://img.shields.io/github/stars/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
-[stars-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/stargazers
-[issues-shield]: https://img.shields.io/github/issues/YOUR_GITHUB_USERNAME/ps3mio.svg?style=for-the-badge
-[issues-url]: https://github.com/YOUR_GITHUB_USERNAME/ps3mio/issues
+[forks-shield]: https://img.shields.io/github/forks/akram-vzx/ps3mio.svg?style=for-the-badge
+[forks-url]: https://github.com/akram-vzx/ps3mio/network/members
+[stars-shield]: https://img.shields.io/github/stars/akram-vzx/ps3mio.svg?style=for-the-badge
+[stars-url]: https://github.com/akram-vzx/ps3mio/stargazers
+[issues-shield]: https://img.shields.io/github/issues/akram-vzx/ps3mio.svg?style=for-the-badge
+[issues-url]: https://github.com/akram-vzx/ps3mio/issues
 [product-screenshot]: docs/images/screenshot.png
 [Movian-badge]: https://img.shields.io/badge/Movian-engine-7b5bf5?style=for-the-badge
 [Movian-url]: https://github.com/andoma/movian

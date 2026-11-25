@@ -1,0 +1,29 @@
+#import "skin://theme.view"
+
+// Portrait poster tile for the Discover / Library grids (same look as the Board posters)
+widget(container_y, {
+  focusable: true;
+  onEvent(activate, navOpen($self.url, void, $self, $parent.model, void, $parent.url));
+
+  widget(container_z, {
+    widget(quad, {
+      color: [0.48, 0.36, 0.96];
+      alpha: iir(isNavFocused() + isHovered(), 6);
+    });
+
+    widget(image, {
+      margin: 0.2em;
+      aspectConstraint: true;
+      source: $self.metadata.icon ?? "skin://icons/ic_help_48px.svg";
+    });
+  });
+
+  widget(label, {
+    caption: $self.metadata.title;
+    ellipsize: true;
+    align: center;
+    size: 1.1em;
+    alpha: 0.85;
+    padding: [0.15em, 0.1em];
+  });
+});
