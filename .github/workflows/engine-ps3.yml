@@ -89,6 +89,16 @@ jobs:
               env.write('CPATH=%s\n' % shim)
           EOF
 
+      - name: Disable the NTFS driver (needs the old PSL1GHT mutex API)
+        working-directory: next
+        run: |
+          # libntfs_ext (USB NTFS drives) uses sys_mutex_* / sys_lwmutex_* functions that the official
+          # PSL1GHT SDK no longer has. ps3mio streams over the network and does not need it.
+          sed -i -E 's/^(CONFIG_LIBNTFS[[:space:]]*:?=[[:space:]]*)yes/\1no/' Makefile
+          sed -i -E 's/^([[:space:]]*#[[:space:]]*define[[:space:]]+ENABLE_LIBNTFS)[[:space:]]+1/\1 0/' src/config.h
+          echo "--- Makefile"; grep -n "CONFIG_LIBNTFS" Makefile | head
+          echo "--- ntfs lines in config.h and fileaccess.c"; grep -n -i "ntfs" src/config.h src/fileaccess/fileaccess.c || true
+
       - name: Build
         working-directory: next
         run: make -j"$(nproc)" all APPNAMEUSER=ps3mio PKGNAME=ps3mio
@@ -117,5 +127,5 @@ jobs:
             FILES="out/ps3mio.pkg"
             test -f out/ps3mio_geohot.pkg && FILES="$FILES out/ps3mio_geohot.pkg"
             gh release create "$TAG" $FILES \
-              --target "$GITHUB_SHA" --title "ps3mio $TAG" --notes-file engine/RELEASE_NOTES.md
+              --target "$GITHUB_SHA" --prerelease --title "ps3mio $TAG (test version)" --notes-file engine/RELEASE_NOTES.md
           fi
