@@ -45,6 +45,29 @@ jobs:
         working-directory: next
         run: make prepare
 
+      - name: Locate PSL1GHT headers and libraries
+        working-directory: next
+        run: |
+          echo "== ps3dev layout"
+          ls ps3dev
+          ls ps3dev/ppu | head -30
+          echo "== ps3dev/ppu/include (first 40)"
+          ls ps3dev/ppu/include | head -40
+          LV2=$(find ps3dev -path '*/psl1ght/lv2.h' | head -1)
+          echo "lv2.h -> ${LV2:-NOT FOUND}"
+          if [ -n "$LV2" ]; then
+            INC=$(cd "$(dirname "$LV2")/.." && pwd)
+            echo "CPATH=$INC" >> "$GITHUB_ENV"
+            echo "Using include directory $INC"
+          fi
+          LIB=$(find ps3dev -name liblv2.a | head -1)
+          echo "liblv2.a -> ${LIB:-NOT FOUND}"
+          if [ -n "$LIB" ]; then
+            echo "LIBRARY_PATH=$(cd "$(dirname "$LIB")" && pwd)" >> "$GITHUB_ENV"
+          fi
+          echo "== other lv2 / psl1ght paths"
+          find ps3dev -iname '*psl1ght*' -maxdepth 3 | head -20
+
       - name: Build
         working-directory: next
         run: make -j"$(nproc)" all APPNAMEUSER=ps3mio PKGNAME=ps3mio
