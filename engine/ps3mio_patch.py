@@ -407,7 +407,7 @@ if s is not None and "ps3mio_fd" not in s:
     m_write = re.search(r'write\(log_fd, "\\n", 1\) != 1\) \{\n\s*close\(log_fd\);\n\s*log_fd = -1;\n\s*\}\n', s)
     m_init = re.search(r'log_start_ts = arch_get_ts\(\);\n', s)
     if ok and m_write and m_init:
-        mirror = """      if(ps3mio_fd != -1) {
+        mirror = """      if(ps3mio_fd != -1 && m7io_log_on) {
         if(write(ps3mio_fd, buf3, strlen(buf3)) != (ssize_t)strlen(buf3) ||
            write(ps3mio_fd, buf2, strlen(buf2)) != (ssize_t)strlen(buf2) ||
            write(ps3mio_fd, s, strlen(s)) != (ssize_t)strlen(s) ||
@@ -424,7 +424,7 @@ if s is not None and "ps3mio_fd" not in s:
 #if defined(__ANDROID__)
     static const char *dirs[] = {"/storage/emulated/0/Download/ps3mio", "/sdcard/Download/ps3mio", NULL};
 #else
-    static const char *dirs[] = {"/dev_usb000/ps3mio", "/dev_hdd0/ps3mio", NULL};
+    static const char *dirs[] = {"/dev_hdd0/game/HTSS00004/USRDIR/ps3mio", "/dev_usb000/ps3mio", "/dev_hdd0/ps3mio", NULL};
 #endif
     int di;
     for(di = 0; dirs[di] != NULL && ps3mio_fd == -1; di++) {
@@ -437,7 +437,7 @@ if s is not None and "ps3mio_fd" not in s:
 #endif
 """
         s = s[:m_init.end()] + init + s[m_init.end():]
-        s = s.replace("static int log_fd;", "static int log_fd;\nstatic int ps3mio_fd = -1;", 1)
+        s = s.replace("static int log_fd;", "static int log_fd;\nstatic int ps3mio_fd = -1;\nint m7io_log_on = 1;   /* Settings > Enable log (global.ps3mio.log) */", 1)
         wr("src/trace.c", s)
         print("ok  trace.c: log mirrored to Download/ps3mio/log.txt (PS3: usb/hdd ps3mio/log.txt)")
     else:
@@ -1028,7 +1028,16 @@ m7_arabic_prepare(const uint32_t *uc, int len, int *outlen)
       len -= (e - s) - n;
       e = s + n;
     }
-    m7_reorder(buf + s, e - s);
+    /* Style codes at the very start / end of a line (shadow, outline, colour ...) must stay
+     * where they are, otherwise reversing the line moves them to the other end. */
+    {
+      int a = s, b = e;
+      while(a < b && M7_ISCODE(buf[a]))
+        a++;
+      while(b > a && M7_ISCODE(buf[b - 1]))
+        b--;
+      m7_reorder(buf + a, b - a);
+    }
     s = e;
   }
   *outlen = len;
@@ -1317,5 +1326,114 @@ if s is not None and "M7LEAD" not in s:
         print("ok  android_video_codec.c: frames held back when more than 0.6 s early (x2 speed fix)")
     else:
         warn("android_video_codec.c: schedule marker not found (x2 speed fix not applied)")
+
+# ---- 17. Settings switch "Enable log" (plugin writes global.ps3mio.log, plugins.c listens) --------
+s = rd("src/plugins.c")
+if s is not None and "m7io_log_watch" not in s:
+    old = "static void\nm7io_load_builtin(void)\n{\n  char errbuf[200];\n"
+    if old in s:
+        s = s.replace(old, """extern int m7io_log_on;
+
+static void
+m7io_log_cb(void *opaque, int v)
+{
+  m7io_log_on = v;
+}
+
+static void
+m7io_log_watch(void)
+{
+  static int done;
+  if(done)
+    return;
+  done = 1;
+  prop_subscribe(0,
+                 PROP_TAG_NAME("global", "ps3mio", "log"),
+                 PROP_TAG_CALLBACK_INT, m7io_log_cb, NULL,
+                 NULL);
+}
+
+static void
+m7io_load_builtin(void)
+{
+  char errbuf[200];
+  m7io_log_watch();
+""", 1)
+        wr("src/plugins.c", s)
+        print("ok  plugins.c: Enable log switch (global.ps3mio.log)")
+    else:
+        warn("plugins.c: m7io_load_builtin marker not found (Enable log switch inactive, log stays on)")
+
+# ---- 18. subtitle options inside the player: Offset, Size, Color (white / yellow), Outline, Shadow ----
+s = rd("src/media/media_settings.c")
+if s is not None and "m7io_sub_color" not in s:
+    ok = True
+    s = s.replace('#include "misc/minmax.h"\n', '#include "misc/minmax.h"\n\nint m7io_sub_color;   /* 0 = white, 1 = yellow (subtitle colour chosen in the player) */\n', 1)
+    old_delay = 'SETTING_TITLE(_p("Delay")),\n                 SETTING_RANGE(-600000, 600000),\n                 SETTING_STEP(500),\n                 SETTING_UNIT_CSTR("ms"),\n                 SETTING_CALLBACK(update_sv_delta, mp),'
+    if old_delay in s:
+        s = s.replace(old_delay, old_delay.replace('_p("Delay")', '_p("Offset")'), 1)
+    else:
+        ok = False
+    old_scale = 'SETTING_TITLE(_p("Scaling")),\n                 SETTING_RANGE(30, 500),'
+    if old_scale in s:
+        s = s.replace(old_scale, old_scale.replace('_p("Scaling")', '_p("Size")'), 1)
+    else:
+        ok = False
+    marker = '  p = make_dir_setting(SETTING_BOOL, "subalign", &mp->mp_settings_subtitle_dir,'
+    if marker in s:
+        add = """  /* ps3mio: colour / outline / shadow. The outline and shadow colour stay black. */
+  setting_create(SETTING_MULTIOPT, mp->mp_setting_subtitle_root,
+                 SETTINGS_INITIAL_UPDATE,
+                 SETTING_TITLE(_p("Color")),
+                 SETTING_STORE("ps3mio", "subcolor"),
+                 SETTING_WRITE_INT(&m7io_sub_color),
+                 SETTING_OPTION("0", _p("White")),
+                 SETTING_OPTION("1", _p("Yellow")),
+                 SETTING_GROUP(&mp->mp_settings_subtitle),
+                 NULL);
+
+  setting_create(SETTING_INT, mp->mp_setting_subtitle_root,
+                 SETTINGS_INITIAL_UPDATE,
+                 SETTING_TITLE(_p("Outline")),
+                 SETTING_VALUE(1),
+                 SETTING_RANGE(0, 4),
+                 SETTING_STEP(1),
+                 SETTING_UNIT_CSTR("px"),
+                 SETTING_STORE("subtitles", "shadowoutlinesize"),
+                 SETTING_WRITE_INT(&subtitle_settings.outline_size),
+                 SETTING_GROUP(&mp->mp_settings_subtitle),
+                 NULL);
+
+  setting_create(SETTING_INT, mp->mp_setting_subtitle_root,
+                 SETTINGS_INITIAL_UPDATE,
+                 SETTING_TITLE(_p("Shadow")),
+                 SETTING_VALUE(2),
+                 SETTING_RANGE(0, 10),
+                 SETTING_STEP(1),
+                 SETTING_UNIT_CSTR("px"),
+                 SETTING_STORE("subtitles", "shadowcolorsize"),
+                 SETTING_WRITE_INT(&subtitle_settings.shadow_displacement),
+                 SETTING_GROUP(&mp->mp_settings_subtitle),
+                 NULL);
+
+"""
+        s = s.replace(marker, add + marker, 1)
+    else:
+        ok = False
+    if ok:
+        wr("src/media/media_settings.c", s)
+        print("ok  media_settings.c: player subtitle options (Offset, Size, Color, Outline, Shadow)")
+    else:
+        warn("media_settings.c: subtitle settings markers not found (subtitle options unchanged)")
+
+s = rd("src/subtitles/video_overlay.c")
+if s is not None and "m7io_sub_color" not in s:
+    old = "    uint32_t pfx[6];\n\n    pfx[0] = TR_CODE_COLOR | subtitle_settings.color;\n"
+    if old in s:
+        s = s.replace(old, "    uint32_t pfx[6];\n    extern int m7io_sub_color;\n\n    /* ps3mio: yellow chosen in the player (TR_CODE_COLOR is BGR) */\n    pfx[0] = TR_CODE_COLOR | (m7io_sub_color ? 0x00FFFF : subtitle_settings.color);\n", 1)
+        wr("src/subtitles/video_overlay.c", s)
+        print("ok  video_overlay.c: yellow subtitle colour")
+    else:
+        warn("video_overlay.c: colour marker not found (colour choice has no effect)")
 
 print("done, %d warning(s)" % len(problems))

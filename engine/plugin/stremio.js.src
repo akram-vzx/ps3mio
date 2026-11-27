@@ -14,7 +14,7 @@
 
   var PFX = 'stremio:';
   var UA = 'ps3mio/0.3 (Stremio client)';
-  var VERSION = '0.3.0';
+  var VERSION = 'v0.8.0 beta';
   var CINEMETA = 'https://v3-cinemeta.strem.io/manifest.json';
   var SYNC_EVERY_MS = 6 * 3600 * 1000;
   var DEFAULT_TRACKERS = [
@@ -39,7 +39,8 @@
     { section: 'Player', key: 'resume', title: 'Resume playback', def: '1', opts: [['1', 'Always'], ['2', 'Ask'], ['0', 'Never']] },
     { section: 'Streaming', key: 'maxStreams', title: 'Streams shown per addon', def: '60', opts: [['20', '20'], ['40', '40'], ['60', '60'], ['100', '100']] },
     { section: 'Advanced', key: 'relay', title: 'HTTP relay prefix (only if HTTPS fails)', def: '', text: true },
-    { section: 'Advanced', key: 'manual', title: 'Extra addon manifest URLs', def: '', text: true }
+    { section: 'Advanced', key: 'manual', title: 'Extra addon manifest URLs', def: '', text: true },
+    { section: 'Advanced', key: 'log', title: 'Enable log', def: '1', opts: [['1', 'On'], ['0', 'Off']] }
   ];
 
   // Settings > Buttons info (PS3 pad; on the phone test build the same actions use touch / the on-screen text)
@@ -65,6 +66,15 @@
   function cfgSet(key, v) {
     st['cfg_' + key] = String(v);
     if (key === 'manual') _addons = null;
+    if (key === 'log') applyLog();
+  }
+  // Settings > Enable log: tells the engine (global.ps3mio.log) whether to write log.txt
+  function applyLog() {
+    try {
+      require('movian/prop').global.ps3mio.log = (cfgGet('log') === '0') ? 0 : 1;
+    } catch (e) {
+      console.log('ps3mio: cannot set the log switch: ' + e);
+    }
   }
   var cfg = { api: 'https://api.strem.io', link: 'https://link.stremio.com' };
   ['relay', 'manual'].forEach(function (k) {
@@ -941,5 +951,6 @@
     pg.redirect(PFX + 'settings');
   });
 
+  applyLog();
   service.create('Stremio', PFX + 'start', 'video', true, LOGO);
 })();

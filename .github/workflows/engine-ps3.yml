@@ -127,5 +127,5 @@ jobs:
             FILES="out/ps3mio.pkg"
             test -f out/ps3mio_geohot.pkg && FILES="$FILES out/ps3mio_geohot.pkg"
             gh release create "$TAG" $FILES \
-              --target "$GITHUB_SHA" --prerelease --title "ps3mio $TAG (test version)" --notes-file engine/RELEASE_NOTES.md
+              --target "$GITHUB_SHA" --prerelease --title "ps3mio ${TAG//-/ }" --notes-file engine/RELEASE_NOTES.md
           fi

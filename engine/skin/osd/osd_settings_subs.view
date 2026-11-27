@@ -1,0 +1,10 @@
+#import "osd_settings.view"
+
+// ps3mio: only the subtitle options we keep (outline and shadow colours are always black)
+OSD_SETTINGS_MENU($self.media.subtitle.settings.nodes, _("Subtitle settings"),
+                 "osd_settings_subs",
+                 ($self.metadata.title == "Offset" ||
+                  $self.metadata.title == "Size" ||
+                  $self.metadata.title == "Color" ||
+                  $self.metadata.title == "Outline" ||
+                  $self.metadata.title == "Shadow"));

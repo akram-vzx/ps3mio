@@ -33,7 +33,7 @@ $self.model.loading = $self.media.loading;
 $self.model.io <- $self.media.io;
 
 $clone.osdpage = 0;
-delta($ui.hideClock, isVisible() && !$core.clock.showDuringVideo &&!($clone.osdpage || $clone.showPlaydeck));
+delta($ui.hideClock, isVisible());
 $view.iconPad = 0;
 
 onEvent(back, {
@@ -190,22 +190,22 @@ widget(container_z, {
           padding: [1.2em, 0.2em];
 
           PLAYDECK_BUTTON(translate($core.media.current.playstatus,
-                                    "skin://icons/ic_pause_48px.svg",
+                                    "skin://icons/m7_pause.svg",
                                     "pause",
-                                    "skin://icons/ic_play_arrow_48px.svg"),
+                                    "skin://icons/m7_play.svg"),
                           _("Play/Pause"),
                           deliverEvent($self.control, PlayPause),
                           $self.media.canPause,
                          "pause-btn");
 
-          PLAYDECK_BUTTON("skin://icons/ic_skip_previous_48px.svg",
+          PLAYDECK_BUTTON("skin://icons/m7_rewind.svg",
                           _("Previous"),
                           deliverEvent($self.control, PreviousTrack),
                           $self.media.canSkipBackward ||
                           $self.media.canSeek,
                          "prev-btn");
 
-          PLAYDECK_BUTTON("skin://icons/ic_skip_next_48px.svg",
+          PLAYDECK_BUTTON("skin://icons/m7_forward.svg",
                           _("Next"),
                           deliverEvent($self.control, NextTrack),
                           $self.media.canSkipForward,
@@ -215,14 +215,14 @@ widget(container_z, {
             width: 1em;
           });
 
-          PLAYDECK_BUTTON("skin://icons/ic_subtitles_48px.svg",
+          PLAYDECK_BUTTON("skin://icons/m7_subtitles.svg",
                           _("Subtitles"),
                           {
                             $clone.osdpage = select($clone.osdpage == 100, 0, 100);
                             focus("osd_subs");
                           }, true, "subtitles-btn");
 
-          PLAYDECK_BUTTON("skin://icons/ic_speaker_48px.svg",
+          PLAYDECK_BUTTON("skin://icons/m7_audio.svg",
                           _("Audio tracks"),
                           {
                             $clone.osdpage = select($clone.osdpage == 101, 0, 101);
@@ -233,18 +233,13 @@ widget(container_z, {
             width: 1em;
           });
 
-          PLAYDECK_BUTTON("skin://icons/ic_menu_48px.svg",
+          PLAYDECK_BUTTON("skin://icons/m7_gauge.svg",
                           _("Settings"),
                           {
                             toggle($clone.osdpage);
                             focus("osd_main");
                           }, true, "menu-btn",
                           $clone.osdpage > 0 && $clone.osdpage < 100);
-
-          PLAYDECK_BUTTON("skin://icons/ic_stop_48px.svg",
-                          _("Stop"),
-                          deliverEvent($self.control, Stop),
-                          true, "stop-btn");
 
           space(1);
         });
@@ -405,7 +400,7 @@ widget(container_z, {
       alpha: iir(changed($self.media.audio.active.url, 5) &&
                  !isVoid($self.media.audio.active.url), 8);
       widget(icon, {
-        source:  "skin://icons/ic_speaker_48px.svg";
+        source:  "skin://icons/m7_audio.svg";
       });
       widget(label, {
         style: "notifications";
@@ -437,7 +432,7 @@ widget(container_z, {
                  !isVoid($self.media.subtitle.active.url), 8);
 
       widget(icon, {
-        source: "skin://icons/ic_subtitles_48px.svg";
+        source: "skin://icons/m7_subtitles.svg";
       });
       widget(label, {
         style: "notifications";
@@ -458,6 +453,17 @@ widget(container_z, {
       height: 3em;
       BackButton($clone.showPlaydeck, {
         $self.close = true;
+      });
+
+      space(1);
+
+      widget(label, {
+        alpha: iir($view.showSeekBar || $clone.showPlaydeck || $clone.osdpage > 0, 8);
+        padding: [1.5em, 0];
+        align: right;
+        size: 1.8em;
+        caption: $core.clock.localtimeofday;
+        shadow: true;
       });
     });
   });

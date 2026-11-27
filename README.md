@@ -113,8 +113,9 @@ The Android build is the same engine, player and interface as the PS3 build, so 
 - [x] WebVTT subtitles from addons
 - [x] Arabic and English text font, with Arabic letter joining and right-to-left order
 - [x] 10 second buffer before playback starts and after every stall
-- [ ] Player menu redesigned to match Stremio
-- [ ] Subtitle settings (size and colors) inside the Stremio settings page
+- [x] Player layout and icons redesigned to match Stremio
+- [x] Subtitle options inside the player: offset, size, white or yellow, outline, shadow
+- [x] Enable log switch in Settings
 - [ ] Testing on a real PS3
 
 See the [open issues](https://github.com/akram-vzx/ps3mio/issues) for known problems.

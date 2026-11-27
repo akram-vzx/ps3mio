@@ -2,7 +2,7 @@
 var fs = require('fs'), path = require('path'), vm = require('vm');
 var code = fs.readFileSync(path.join(__dirname, '../plugin/stremio.js'), 'utf8');
 
-var routes = [], searchers = [], notes = [], fetched = [];
+var routes = [], searchers = [], notes = [], fetched = [], logProp = {};
 function deep() {
   var store = {};
   return new Proxy(store, {
@@ -108,6 +108,7 @@ var sandbox = {
       case 'movian/service': return { create: function () {} };
       case 'native/popup': return { notify: function (t) { notes.push(t); }, textDialog: function () { return { input: 'heat' }; } };
       case 'movian/videoscrobbler': return { VideoScrobbler: function () {} };
+      case 'movian/prop': return { global: { ps3mio: logProp } };
     }
     throw new Error('unexpected require ' + n);
   }
@@ -222,6 +223,12 @@ assert(set2.items.some(function (i) { return /Seek back step:\s+20 s/.test((i.md
 var c2 = open('stremio:cfg:relay');
 assert(c2.redirected === 'stremio:settings' && store.cfg_relay === 'heat', 'text setting via dialog');
 store.cfg_relay = '';
+assert(set2.items.some(function (i) { return /Enable log:\s+On/.test((i.md || {}).title || ''); }) && logProp.log === 1, 'Enable log setting shown, engine told "on" at start');
+var c3 = open('stremio:cfg:log');
+assert(store.cfg_log === '0' && logProp.log === 0, 'Enable log switches the engine flag off');
+var vers = open('stremio:settings');
+assert(vers.items.some(function (i) { return /ps3mio v0\.8\.0 beta/.test((i.md || {}).title || ''); }), 'version v0.8.0 beta shown in settings');
+store.cfg_log = '1';
 var rf = open('stremio:refresh');
 assert(rf.redirected === 'stremio:start', 'refresh returns to board');
 var lo = open('stremio:logout');
